@@ -105,4 +105,6 @@ The #1 bottleneck in Product Experimentation is **Velocity**.
 
 
 Todo:
-- figure out errors in data generating process
+- Create the data simulation function
+- Replicate generating data, and generating a point estimate N times
+- Generate a sampling distribution based off this
