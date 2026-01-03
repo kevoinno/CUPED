@@ -36,11 +36,42 @@ Scale planning for real-world A/B testing:
 - **Sample size optimization**: Calculate required samples with CUPED
 - **ROI quantification**: Demonstrate engineering time savings
 
-## Quick Start
+## Setup
 
+### Prerequisites
+- Python 3.13+
+- uv package manager (`pip install uv` or `brew install uv`)
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd cuped
+   ```
+
+2. **Install dependencies**
+   ```bash
+   uv sync
+   ```
+
+3. **Run the simulator**
+   ```bash
+   uv run python CUPED_test.py
+   ```
+
+### Development (Optional)
+
+Add development tools:
 ```bash
-pip install marimo matplotlib numpy pandas scipy
-marimo run CUPED_test.py
+uv add --dev black ruff pytest
+```
+
+Run development commands:
+```bash
+uv run black .          # Format code
+uv run ruff check .     # Lint code
+uv run pytest           # Run tests (when available)
 ```
 
 Navigate the tabbed interface to explore CUPED interactively.
@@ -48,15 +79,15 @@ Navigate the tabbed interface to explore CUPED interactively.
 ## Technical Stack
 
 - **UI Framework**: Marimo for reactive, interactive notebooks
-- **Visualization**: matplotlib for statistical plots
+- **Visualization**: Altair for interactive statistical plots, matplotlib for additional plotting
 - **Computation**: numpy, pandas, scipy for data processing and statistics
+- **Package Management**: uv for modern Python dependency management
 - **Architecture**: Functional programming with pure data transformations
 
 ## Roadmap
 
-- [ ] Clean up A/B testing function
-- [ ] Build main page tab 
-- [ ] Build core CUPED learning interface with interactive controls
-- [ ] Add multi-method comparison functions and visualizations
+- [x] Build main CUPED learning interface with interactive controls
+- [ ] Add multi-method comparison functions and visualizations (Extras tab placeholder)
 - [ ] Polish user experience and educational content
 - [ ] Add production planning calculator
+- [ ] Add comprehensive test suite
