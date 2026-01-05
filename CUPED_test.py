@@ -224,6 +224,237 @@ def _(np, pd, run_ttest, simulate_correlated_data):
 
 
 @app.cell
+def _(np):
+    def vectorized_simulate_correlated_data(
+        r: int, n: int, tau: float, mean: list[float], sd: list[float], rho: float
+    ):
+        """
+        Generate synthetic A/B test data for multiple replications simultaneously.
+
+        Creates correlated covariate and outcome data for Monte Carlo simulations,
+        generating all replications at once for efficient vectorized processing.
+
+        Parameters
+        ----------
+        r : int
+            Number of simulation replications
+        n : int
+            Sample size per replication (must be even)
+        tau : float
+            True treatment effect added to treated units
+        mean : list[float]
+            [mean_x, mean_y] for covariate and outcome distributions
+        sd : list[float]
+            [sd_x, sd_y] for covariate and outcome standard deviations
+        rho : float
+            Correlation coefficient between x and y (-1 to 1)
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            x : ndarray, shape (r, n)
+                Covariate values for all replications
+            y : ndarray, shape (r, n)
+                Outcome values for all replications
+            t : ndarray, shape (r, n)
+                Treatment assignments (0/1) for all replications
+
+        Raises
+        ------
+        ValueError
+            If n is not even, or if parameter lengths/shapes are invalid
+
+        Notes
+        -----
+        Treatment assignments are randomly shuffled within each replication to ensure
+        balance while maintaining independence across replications.
+        """
+        # Input validation with user-friendly messages
+        if n % 2 != 0:
+            raise ValueError("Sample size must be even for balanced treatment groups")
+        if len(mean) != 2 or len(sd) != 2:
+            raise ValueError(
+                "Mean and standard deviation must each contain exactly 2 values"
+            )
+        if not all(s > 0 for s in sd):
+            raise ValueError("Standard deviations must be positive values")
+        if not (-1 <= rho <= 1):
+            raise ValueError("Correlation coefficient must be between -1 and 1")
+
+        # Extract parameters
+        sd_x, sd_y = sd[0], sd[1]
+
+        # Calculate covariance matrix
+        cov_x_y = rho * sd_x * sd_y
+        cov_matrix = [[sd_x**2, cov_x_y], [cov_x_y, sd_y**2]]
+
+        # Generate correlated samples for x, y
+        data = np.random.multivariate_normal(mean, cov_matrix, size=(r, n))
+        x = data[:, :, 0]
+        y = data[:, :, 1]
+
+        # Create a 1D 50/50 treatment assignment array
+        t_1d = np.repeat([0, 1], n // 2)
+        unshuffled_t = np.tile(t_1d, (r, 1))
+
+        t = np.apply_along_axis(np.random.permutation, 1, unshuffled_t)
+
+        # Add treatment effect
+        y = np.where(t == 1, y + tau, y)
+
+        return x, y, t
+    return (vectorized_simulate_correlated_data,)
+
+
+@app.cell
+def _(np):
+    def vectorized_ate(y, t):
+        """
+        Calculate average treatment effects for multiple replications simultaneously.
+
+        Computes ATE = mean(y|t=1) - mean(y|t=0) for each replication using
+        vectorized operations on treatment-masked arrays.
+
+        Parameters
+        ----------
+        y : ndarray, shape (r, n)
+            Outcome values for r replications of n samples each
+        t : ndarray, shape (r, n)
+            Treatment assignments (0/1) for r replications of n samples each
+
+        Returns
+        -------
+        ndarray, shape (r,)
+            Average treatment effect estimates for each replication
+
+        Notes
+        -----
+        Uses boolean masking to efficiently compute group means without explicit
+        data splitting, enabling vectorized computation across all replications.
+        """
+        treated_mask = t == 1
+        control_mask = t == 0
+
+        # mean(group) = sum(group) / num in group
+        treated_means = np.sum(y * treated_mask, axis=1) / np.sum(treated_mask, axis=1)
+        control_means = np.sum(y * control_mask, axis=1) / np.sum(control_mask, axis=1)
+
+        return treated_means - control_means
+    return (vectorized_ate,)
+
+
+@app.cell
+def _(np):
+    def vectorized_cuped(x, y):
+        """
+        Apply CUPED adjustment to outcome data for multiple replications.
+
+        Performs covariate adjustment y_cv = y - θ(x - x̄) where θ is the
+        regression coefficient estimated from each replication's data.
+
+        Parameters
+        ----------
+        x : ndarray, shape (r, n)
+            Covariate values for r replications of n samples each
+        y : ndarray, shape (r, n)
+            Outcome values for r replications of n samples each
+
+        Returns
+        -------
+        ndarray, shape (r, n)
+            CUPED-adjusted outcome values y_cv for all replications
+
+        Notes
+        -----
+        Calculates θ = cov(x,y) / var(x) using sample statistics (ddof=1) for each
+        replication independently. Adjustment is applied using vectorized broadcasting
+        operations for computational efficiency.
+        """
+        x_means = np.mean(x, axis=1, keepdims=True)
+        y_means = np.mean(y, axis=1, keepdims=True)
+        n = x.shape[1]
+
+        cov_x_y = np.sum((x - x_means) * (y - y_means), axis=1) / (n - 1)
+        var_x = np.var(x, axis=1, ddof=1)
+        theta = cov_x_y / var_x
+
+        # y_cv = y - theta * (x - x_means)
+        y_cv = y - theta[:, np.newaxis] * (x - x_means)
+
+        return y_cv
+    return (vectorized_cuped,)
+
+
+@app.cell
+def _(vectorized_replicate_ab_test):
+    vectorized_replicate_ab_test(100, 1000, 5, [0, 0], [100, 100], 0.6)
+    return
+
+
+@app.cell
+def _(
+    pd,
+    vectorized_ate,
+    vectorized_cuped,
+    vectorized_simulate_correlated_data,
+):
+    def vectorized_replicate_ab_test(
+        r: int, n: int, tau: float, mean: list[float], sd: list[float], rho: float
+    ) -> pd.DataFrame:
+        """
+        Run Monte Carlo simulation comparing naive vs CUPED ATE estimators.
+
+        Generates synthetic A/B test data for multiple replications and computes
+        both naive difference-in-means and CUPED-adjusted treatment effect estimates
+        using fully vectorized operations for computational efficiency.
+
+        Parameters
+        ----------
+        r : int
+            Number of simulation replications
+        n : int
+            Sample size per replication (must be even)
+        tau : float
+            True treatment effect (added to treated group)
+        mean : list[float]
+            [mean_x, mean_y] for covariate and outcome distributions
+        sd : list[float]
+            [sd_x, sd_y] for covariate and outcome standard deviations
+        rho : float
+            Correlation coefficient between x and y (-1 to 1)
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns:
+            - 'naive_ate': Naive difference-in-means estimates (r values)
+            - 'cuped_ate': CUPED-adjusted estimates (r values)
+
+        Notes
+        -----
+        Fully vectorized implementation eliminates Python loops over replications,
+        providing significant performance improvements over iterative approaches.
+        Results can be used to analyze estimator precision and variance reduction.
+        """
+        # Simulate all data in an (r x n) array
+        x, y, t = vectorized_simulate_correlated_data(r, n, tau, mean, sd, rho)
+
+        # Compute naive ates for r replications
+        naive_ates = vectorized_ate(y, t)
+
+        # Compute covariate adjusted y
+        y_cv = vectorized_cuped(x, y)
+
+        # Compute CUPED ates for r replications
+        cuped_ates = vectorized_ate(y_cv, t)
+
+        res = {"naive_ate": naive_ates, "cuped_ate": cuped_ates}
+
+        return pd.DataFrame(res)
+    return (vectorized_replicate_ab_test,)
+
+
+@app.cell
 def _(pd, plt):
     def generate_sampling_distribution(data: pd.DataFrame) -> dict[str, float]:
         """
@@ -362,7 +593,9 @@ def _(alt, pd):
         chart = (
             alt.layer(base_chart, reference_line)
             .facet(column=alt.Column("method:N", title=None, header=None))
-            .properties(title=f"Sampling Distributions /n Naive (SE = {data['naive_ate'].std():.3f}) vs CUPED (SE = {data['cuped_ate'].std():.3f})")
+            .properties(
+                title=f"Sampling Distributions Naive (SE = {data['naive_ate'].std():.3f}) vs CUPED (SE = {data['cuped_ate'].std():.3f})"
+            )
             .configure_title(fontSize=16, anchor="middle")
             .configure_axis(
                 grid=False, domain=True
@@ -557,12 +790,6 @@ def _(
     results_display = mo.vstack([mo.md("### Results"), altair_display, variance_text])
     results_display
     return (results_display,)
-
-
-@app.cell
-def _():
-    # Display the main tabbed interface
-    return
 
 
 if __name__ == "__main__":

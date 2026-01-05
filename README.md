@@ -84,10 +84,13 @@ Navigate the tabbed interface to explore CUPED interactively.
 - **Package Management**: uv for modern Python dependency management
 - **Architecture**: Functional programming with pure data transformations
 
-## Roadmap
+## To-do list
+- Benchmark how much faster vectorized operations are compared to naive
 
-- [x] Build main CUPED learning interface with interactive controls
-- [ ] Add multi-method comparison functions and visualizations (Extras tab placeholder)
-- [ ] Polish user experience and educational content
-- [ ] Add production planning calculator
-- [ ] Add comprehensive test suite
+- Fix constant reruns when I change the slider by just a little 
+  - Playing around with threshold?
+  - Find some way to keep reactivity without taking so long
+
+-  Add multi-method comparison functions and visualizations (Extras tab placeholder)
+-  Polish user experience and educational content
+-  Add production planning calculator
