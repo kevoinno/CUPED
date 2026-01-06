@@ -40,11 +40,17 @@
         "position": null
       },
       {
+        "position": null
+      },
+      {
+        "position": null
+      },
+      {
         "position": [
           0,
           0,
-          9,
-          30
+          24,
+          37
         ]
       },
       {
@@ -57,12 +63,7 @@
         "position": null
       },
       {
-        "position": [
-          9,
-          0,
-          15,
-          30
-        ]
+        "position": null
       }
     ]
   }
