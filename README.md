@@ -85,8 +85,11 @@ Navigate the tabbed interface to explore CUPED interactively.
 - **Architecture**: Functional programming with pure data transformations
 
 ## To-do list
-- Add results from a single experiment
 
+- Add results from a single experiment
 -  Add multi-method comparison functions and visualizations (Extras tab placeholder)
 -  Polish user experience and educational content
+  - Make opacity of the single experiment higher
+  - align parameters and parameters panel
+  - Fix graph labels for single experiment
 -  Add production planning calculator

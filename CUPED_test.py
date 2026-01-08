@@ -379,7 +379,6 @@ def _(pd, plt):
         plt.tight_layout()
 
         return fig
-        # return {"naive_std_error": naive_std_error, "cuped_std_error": cuped_std_error}
     return
 
 
@@ -436,7 +435,7 @@ def _(alt, pd):
             alt.layer(base_chart, reference_line)
             .facet(column=alt.Column("method:N", title=None, header=None))
             .properties(
-                title=f"Sampling Distributions Naive (SE = {data['naive_ate'].std():.3f}) vs CUPED (SE = {data['cuped_ate'].std():.3f})"
+                title=f"Sampling Distributions of ATE Naive (SE = {data['naive_ate'].std():.3f}) vs CUPED (SE = {data['cuped_ate'].std():.3f})"
             )
             .configure_title(fontSize=16, anchor="middle")
             .configure_axis(
@@ -563,13 +562,116 @@ def _(form):
 
 
 @app.cell
+def _(np):
+    def compute_single_experiment_results(
+        n, tau, mean, sd, rho, run_ttest, simulate_correlated_data, alt, pd, mo
+    ):
+        np.random.seed(67)
+        single_data = simulate_correlated_data(n, tau, mean, sd, rho)
+        naive_results = run_ttest("t", "y", single_data, print_results=False)
+        theta = np.cov(single_data.x, single_data.y, ddof=1)[0, 1] / np.var(
+            single_data.x, ddof=1
+        )
+        single_data["y_cv"] = single_data.y - theta * (
+            single_data.x - single_data.x.mean()
+        )
+        cuped_results = run_ttest("t", "y_cv", single_data, print_results=False)
+
+        # Table
+        table_data = [
+            {
+                "Method": "Naive",
+                "Effect Size": round(naive_results["effect_size"], 3),
+                "Std Error": round(naive_results["std_error"], 3),
+                "P-Value": round(naive_results["pvalue"], 3),
+            },
+            {
+                "Method": "CUPED",
+                "Effect Size": round(cuped_results["effect_size"], 3),
+                "Std Error": round(cuped_results["std_error"], 3),
+                "P-Value": round(cuped_results["pvalue"], 3),
+            },
+        ]
+        table = mo.ui.table(table_data)
+
+        # Graph
+        graph_data = pd.DataFrame(
+            {
+                "method": ["Naive", "CUPED"],
+                "effect": [naive_results["effect_size"], cuped_results["effect_size"]],
+                "se": [naive_results["std_error"], cuped_results["std_error"]],
+            }
+        )
+        graph_data["ymin"] = graph_data["effect"] - 1.96 * graph_data["se"]
+        graph_data["ymax"] = graph_data["effect"] + 1.96 * graph_data["se"]
+
+        points = (
+            alt.Chart(graph_data)
+            .mark_circle(size=100)
+            .encode(
+                x=alt.X("method:N", title="Method"),
+                y=alt.Y("effect:Q", title="Effect Size"),
+                color=alt.Color(
+                    "method:N",
+                    scale=alt.Scale(
+                        domain=["Naive", "CUPED"], range=["lightcoral", "lightgreen"]
+                    ),
+                ),
+            )
+        )
+        error_bars = (
+            alt.Chart(graph_data)
+            .mark_errorbar()
+            .encode(
+                x="method:N",
+                y="ymin:Q",
+                y2="ymax:Q",
+                color=alt.Color(
+                    "method:N",
+                    scale=alt.Scale(
+                        domain=["Naive", "CUPED"], range=["lightcoral", "lightgreen"]
+                    ),
+                ),
+            )
+        )
+        rule = (
+            alt.Chart()
+            .mark_rule(color="black", strokeDash=[5, 5])
+            .encode(y=alt.datum(tau))
+        )
+        graph = (points + error_bars + rule).properties(
+            title="Single Experiment Effect Estimates with 95% CI",
+            width=400,
+            height=300,
+        )
+        graph_display = mo.ui.altair_chart(graph)
+
+        # Info box
+        reduction = (
+            (naive_results["std_error"] ** 2 - cuped_results["std_error"] ** 2)
+            / naive_results["std_error"] ** 2
+            * 100
+        )
+        info = mo.md(
+            f"In this single experiment, CUPED reduced the variance of the effect estimate by {reduction:.1f}%."
+        ).callout(kind="info")
+
+        return table, graph_display, info
+    return (compute_single_experiment_results,)
+
+
+@app.cell
 def _(
+    alt,
+    compute_single_experiment_results,
     generate_sampling_distribution_altair,
     mean,
     mo,
     n,
+    pd,
     r,
     rho,
+    run_ttest,
     sd,
     simulate_correlated_data,
     tau,
@@ -594,11 +696,23 @@ def _(
 
     # Create readable variance reduction text
     variance_text = mo.md(
-        f"CUPED reduced the variance by {variance_reduction:.1f}%."
+        f"Over the course of {r} experiments, CUPED reduced the sampling variance by {variance_reduction:.1f}%."
     ).callout(kind="info")
 
-    # Display results in a clean layout
-    results_display = mo.vstack([mo.md("### Results"), altair_display, variance_text])
+    # Single experiment results
+    table, graph_display, info = compute_single_experiment_results(
+        n, tau, mean, sd, rho, run_ttest, simulate_correlated_data, alt, pd, mo
+    )
+
+    # Tabs
+    single_exp_tab = mo.vstack([table, graph_display, info])
+    replicated_tab = mo.vstack([altair_display, variance_text])
+    results_display = mo.ui.tabs(
+        {
+            "Single Experiment Results": single_exp_tab,
+            "Replicated Results": replicated_tab,
+        }
+    )
     return (results_display,)
 
 
