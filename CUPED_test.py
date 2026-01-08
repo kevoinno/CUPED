@@ -13,14 +13,13 @@ def _():
     import marimo as mo
     import altair as alt
     import time
+    import typing
     return alt, mo, np, pd, plt, time, ttest_ind
 
 
 @app.cell
 def _(np):
-    def vectorized_simulate_correlated_data(
-        r: int, n: int, tau: float, mean: list[float], sd: list[float], rho: float
-    ):
+    def vectorized_simulate_correlated_data(r, n, tau, mean, sd, rho):
         """
         Generate synthetic A/B test data for multiple replications simultaneously.
 
@@ -35,9 +34,9 @@ def _(np):
             Sample size per replication (must be even)
         tau : float
             True treatment effect added to treated units
-        mean : list[float]
+        mean : List[float]
             [mean_x, mean_y] for covariate and outcome distributions
-        sd : list[float]
+        sd : List[float]
             [sd_x, sd_y] for covariate and outcome standard deviations
         rho : float
             Correlation coefficient between x and y (-1 to 1)
@@ -185,9 +184,7 @@ def _(
     vectorized_cuped,
     vectorized_simulate_correlated_data,
 ):
-    def vectorized_replicate_ab_test(
-        r: int, n: int, tau: float, mean: list[float], sd: list[float], rho: float
-    ) -> pd.DataFrame:
+    def vectorized_replicate_ab_test(r, n, tau, mean, sd, rho) -> pd.DataFrame:
         """
         Run Monte Carlo simulation comparing naive vs CUPED ATE estimators.
 
@@ -203,9 +200,9 @@ def _(
             Sample size per replication (must be even)
         tau : float
             True treatment effect (added to treated group)
-        mean : list[float]
+        mean : List[float]
             [mean_x, mean_y] for covariate and outcome distributions
-        sd : list[float]
+        sd : List[float]
             [sd_x, sd_y] for covariate and outcome standard deviations
         rho : float
             Correlation coefficient between x and y (-1 to 1)
@@ -244,58 +241,58 @@ def _(
 @app.cell
 def _(np, pd, ttest_ind):
     def run_ttest(
-            treatment: str, outcome: str, data: pd.DataFrame, print_results: bool = True
-        ) -> dict[str, float]:
-            """
-            Perform t-test analysis comparing treated vs control groups.
+        treatment: str, outcome: str, data: pd.DataFrame, print_results: bool = True
+    ) -> dict[str, float]:
+        """
+        Perform t-test analysis comparing treated vs control groups.
 
-            Parameters
-            ----------
-            treatment : str
-                Column name in data representing the treatment indicator (0/1)
-            outcome : str
-                Column name in data representing the outcome variable
-            data : pd.DataFrame
-                DataFrame containing treatment, outcome, and covariate columns
-            print_results : bool, default=True
-                Whether to print formatted results to console
+        Parameters
+        ----------
+        treatment : str
+            Column name in data representing the treatment indicator (0/1)
+        outcome : str
+            Column name in data representing the outcome variable
+        data : pd.DataFrame
+            DataFrame containing treatment, outcome, and covariate columns
+        print_results : bool, default=True
+            Whether to print formatted results to console
 
-            Returns
-            -------
-            dict[str, float]
-                Dictionary containing test results with keys:
-                - 'effect_size': Average treatment effect
-                - 'pvalue': Two-sided p-value
-                - 't': t-statistic
-                - 'std_error': Standard error of the effect estimate
+        Returns
+        -------
+        dict[str, float]
+            Dictionary containing test results with keys:
+            - 'effect_size': Average treatment effect
+            - 'pvalue': Two-sided p-value
+            - 't': t-statistic
+            - 'std_error': Standard error of the effect estimate
 
-            Examples
-            --------
-            >>> results = run_ttest("treatment", "revenue", df)
-            >>> print(results['effect_size'])
-            2.34
-            """
-            treated = data[data[treatment] == 1]
-            control = data[data[treatment] == 0]
+        Examples
+        --------
+        >>> results = run_ttest("treatment", "revenue", df)
+        >>> print(results['effect_size'])
+        2.34
+        """
+        treated = data[data[treatment] == 1]
+        control = data[data[treatment] == 0]
 
-            ttest_res = ttest_ind(treated[outcome], control[outcome], equal_var=True)
-            ate = np.mean(treated[outcome]) - np.mean(control[outcome])
-            std_error = ate / ttest_res.statistic
+        ttest_res = ttest_ind(treated[outcome], control[outcome], equal_var=True)
+        ate = np.mean(treated[outcome]) - np.mean(control[outcome])
+        std_error = ate / ttest_res.statistic
 
-            if print_results:
-                print(f"Effect size: {ate:.2f}")
-                print(f"pvalue : {ttest_res.pvalue:.2f}")
-                print(f"t-statistic : {ttest_res.statistic:.2f}")
-                print(f"std error : {std_error:.2f}")
+        if print_results:
+            print(f"Effect size: {ate:.2f}")
+            print(f"pvalue : {ttest_res.pvalue:.2f}")
+            print(f"t-statistic : {ttest_res.statistic:.2f}")
+            print(f"std error : {std_error:.2f}")
 
-            res = {
-                "effect_size": ate,
-                "pvalue": ttest_res.pvalue,
-                "t": ttest_res.statistic,
-                "std_error": std_error,
-            }
+        res = {
+            "effect_size": ate,
+            "pvalue": ttest_res.pvalue,
+            "t": ttest_res.statistic,
+            "std_error": std_error,
+        }
 
-            return res
+        return res
     return (run_ttest,)
 
 
@@ -489,104 +486,79 @@ def _(mo, replicate_ab_test, time, vectorized_replicate_ab_test):
 
 @app.cell
 def _(mo):
-    # Parameter sliders with grid layout
-
-    # Data Parameters section
-    data_title = mo.md("### Data Parameters")
-
-    # Header row - equal width columns
-    header = mo.hstack(
-        [mo.md("**X (covariate)**"), mo.md("**Y (outcome)**")], justify="space-around"
-    )
-
-    # Mean row - equal width columns
+    # Define sliders
     mean_x_slider = mo.ui.slider(-50, 50, value=0, step=5, show_value=True)
     mean_y_slider = mo.ui.slider(-50, 50, value=0, step=5, show_value=True)
-    mean_row = mo.hstack(
-        [
-            mo.vstack([mo.md("Mean"), mean_x_slider]),
-            mo.vstack([mo.md("Mean"), mean_y_slider]),
-        ],
-        justify="space-around",
-    )
-
-    # SD row - equal width columns
     sd_x_slider = mo.ui.slider(10, 200, value=100, step=10, show_value=True)
     sd_y_slider = mo.ui.slider(10, 200, value=100, step=10, show_value=True)
-    sd_row = mo.hstack(
-        [mo.vstack([mo.md("SD"), sd_x_slider]), mo.vstack([mo.md("SD"), sd_y_slider])],
-        justify="space-around",
-    )
-
-    # Single-column parameters
     rho_slider = mo.ui.slider(0.0, 0.9, value=0.6, step=0.05, show_value=True)
-    correlation_section = mo.vstack([mo.md("Correlation (X,Y)"), rho_slider])
-
     tau_slider = mo.ui.slider(-15.0, 15.0, value=5.0, step=0.5, show_value=True)
-    treatment_section = mo.vstack([mo.md("Treatment Effect (τ)"), tau_slider])
-
-    # Simulation Parameters section
-    sim_title = mo.md("### Simulation Parameters")
-
-    # Simulation row - equal width columns
     r_slider = mo.ui.slider(100, 2000, value=500, step=100, show_value=True)
     n_slider = mo.ui.slider(500, 20000, value=2000, step=500, show_value=True)
-    sim_row = mo.hstack(
-        [
-            mo.vstack([mo.md("Replications (r)"), r_slider]),
-            mo.vstack([mo.md("Sample Size (n)"), n_slider]),
-        ],
-        justify="space-around",
-    )
 
-    compute_button = mo.ui.run_button(label='Run Simulation')
+    # Markdown template to replicate old hstack layout using HTML flex
+    template = """
+    ### Data Parameters
 
-    # Combine all sections with spacing (no horizontal lines)
-    left_panel = mo.vstack(
-        [
-            data_title,
-            header,
-            mean_row,
-            sd_row,
-            correlation_section,
-            treatment_section,
-            sim_title,
-            sim_row,
-            compute_button       
-        ],
-        gap=1,
+    <div style="display: flex; justify-content: space-around;">
+      <div>Mean X: {mean_x}</div>
+      <div>Mean Y: {mean_y}</div>
+    </div>
+
+    <div style="display: flex; justify-content: space-around;">
+      <div>SD X: {sd_x}</div>
+      <div>SD Y: {sd_y}</div>
+    </div>
+
+    Correlation (X,Y): {rho}
+
+    Treatment Effect (τ): {tau}
+
+    ### Simulation Parameters
+
+    <div style="display: flex; justify-content: space-around;">
+      <div>Replications (r): {r}</div>
+      <div>Sample Size (n): {n}</div>
+    </div>
+    """
+
+    # Batch sliders into the template, then wrap in form
+    form = (
+        mo.md(template)
+        .batch(
+            mean_x=mean_x_slider,
+            mean_y=mean_y_slider,
+            sd_x=sd_x_slider,
+            sd_y=sd_y_slider,
+            rho=rho_slider,
+            tau=tau_slider,
+            r=r_slider,
+            n=n_slider,
+        )
+        .form(submit_button_label="Run Simulation", bordered=False)
     )
-    return (
-        left_panel,
-        mean_x_slider,
-        mean_y_slider,
-        n_slider,
-        r_slider,
-        rho_slider,
-        sd_x_slider,
-        sd_y_slider,
-        tau_slider,
-    )
+    return (form,)
 
 
 @app.cell
-def _(
-    mean_x_slider,
-    mean_y_slider,
-    n_slider,
-    r_slider,
-    rho_slider,
-    sd_x_slider,
-    sd_y_slider,
-    tau_slider,
-):
-    # set parameters from sliders
-    mean = [mean_x_slider.value, mean_y_slider.value]
-    sd = [sd_x_slider.value, sd_y_slider.value]
-    n = n_slider.value
-    tau = tau_slider.value
-    rho = rho_slider.value
-    r = r_slider.value
+def _(form):
+    # Get form values (dict from batch); use defaults if not submitted yet
+    params = form.value or {
+        "mean_x": 0,
+        "mean_y": 0,
+        "sd_x": 100,
+        "sd_y": 100,
+        "rho": 0.6,
+        "tau": 5.0,
+        "r": 500,
+        "n": 2000,
+    }
+    mean = [params["mean_x"], params["mean_y"]]
+    sd = [params["sd_x"], params["sd_y"]]
+    n = params["n"]
+    tau = params["tau"]
+    rho = params["rho"]
+    r = params["r"]
     return mean, n, r, rho, sd, tau
 
 
@@ -606,22 +578,10 @@ def _(
     # Generate single experiment data for individual analysis
     data = simulate_correlated_data(n, tau, mean, sd, rho)
 
-    #print("=== Single Experiment Results ===\n")
-    #print("=== Naive Results ===")
-    ## Run naive estimate
-    #run_ttest("t", "y", data)
-    #
-    ## Run CUPED estimate
-    #theta = np.cov(data.x, data.y, ddof=1)[0, 1] / np.var(data.x, ddof=1)
-    #mean_x = np.mean(data.x)
-    #data["y_cv"] = data.y - theta * (data.x - mean_x)
-    #print("\n=== CUPED Results ===")
-    #run_ttest("t", "y_cv", data)
-
     # Generate replication data for sampling distribution analysis
     out_df = vectorized_replicate_ab_test(r, n, tau, mean, sd, rho)
 
-    #print(f"CUPED std: {out_df['cuped_ate'].std():.3f}")
+    # print(f"CUPED std: {out_df['cuped_ate'].std():.3f}")
 
     # Generate comprehensive sampling distribution visualization
     chart = generate_sampling_distribution_altair(out_df)
@@ -643,16 +603,10 @@ def _(
 
 
 @app.cell
-def _(left_panel, mo, results_display):
+def _(form, mo, results_display):
     # Create complete CUPED tab with parameters and results
     cuped_tab = mo.vstack(
-        [
-            mo.md("# CUPED Simulator \n"),
-            mo.hstack([
-                left_panel,
-                results_display
-            ])
-        ]
+        [mo.md("# CUPED Simulator \n"), mo.hstack([form, results_display])]
     )
     return (cuped_tab,)
 
@@ -703,9 +657,9 @@ def _(np, pd):
             Number of samples to generate (must be even for balanced groups)
         tau : float
             Treatment effect to add to outcome for treated units
-        mean : list[float]
+        mean : List[float]
             2-element list [mean_x, mean_y] for covariate and outcome
-        sd : list[float]
+        sd : List[float]
             2-element list [sd_x, sd_y] for standard deviations
         rho : float
             Correlation coefficient between x and y (-1 to 1)
@@ -780,9 +734,9 @@ def _(np, pd, run_ttest, simulate_correlated_data):
             Sample size per experiment (must be even)
         tau : float
             True treatment effect (added to treated group)
-        mean : list[float]
+        mean : List[float]
             [mean_x, mean_y] for covariate and outcome distributions
-        sd : list[float]
+        sd : List[float]
             [sd_x, sd_y] for covariate and outcome standard deviations
         rho : float
             Correlation between covariate x and outcome y (-1 to 1)
@@ -837,6 +791,16 @@ def _(np, pd, run_ttest, simulate_correlated_data):
 
         return res
     return (replicate_ab_test,)
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
+    return
 
 
 if __name__ == "__main__":

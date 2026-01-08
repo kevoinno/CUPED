@@ -85,13 +85,8 @@ Navigate the tabbed interface to explore CUPED interactively.
 - **Architecture**: Functional programming with pure data transformations
 
 ## To-do list
-- Fix constant reruns when I change the slider by just a little 
-  - Playing around with threshold?
-  - Find some way to keep reactivity without taking so long
+- Add results from a single experiment
 
-- Add results for a single experiment
-- Show equivalence with Lin (2013) regression
-
-
-## Notes
-- Vectorizing the simulation code led to ~63% faster simulation speed
+-  Add multi-method comparison functions and visualizations (Extras tab placeholder)
+-  Polish user experience and educational content
+-  Add production planning calculator
