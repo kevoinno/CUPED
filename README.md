@@ -83,13 +83,10 @@ Navigate the tabbed interface to explore CUPED interactively.
 - **Computation**: numpy, pandas, scipy for data processing and statistics
 - **Package Management**: uv for modern Python dependency management
 - **Architecture**: Functional programming with pure data transformations
-
 ## To-do list
-
-- Add results from a single experiment
+- Fix reactivity (try one shotting a prompt)
+-  Polish user experience and educational content 
+-  Add business logic below the variance reduction statement. 
+  - e.g. 1 "This could have reduced our experiment time by X%"
+  - e.g. 2 "This could have reduced our sample size by X% while preserving the same power and significance level"
 -  Add multi-method comparison functions and visualizations (Extras tab placeholder)
--  Polish user experience and educational content
-  - Make opacity of the single experiment higher
-  - align parameters and parameters panel
-  - Fix graph labels for single experiment
--  Add production planning calculator

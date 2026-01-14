@@ -384,7 +384,7 @@ def _(pd, plt):
 
 @app.cell
 def _(alt, pd):
-    def generate_sampling_distribution_altair(data: pd.DataFrame):
+    def generate_sampling_distribution_altair(data: pd.DataFrame, tau: float):
         """
         Create interactive comparative histograms using Altair.
 
@@ -392,6 +392,8 @@ def _(alt, pd):
         ----------
         data : pd.DataFrame
             DataFrame with 'naive_ate' and 'cuped_ate' columns
+        tau : float
+            True treatment effect value for reference line
 
         Returns
         -------
@@ -422,12 +424,12 @@ def _(alt, pd):
             )
         )
 
-        # Create reference line for true effect (τ = 5.0)
-        # Must use same data as base chart for faceting to work
+        # Create reference line for true effect (τ)
+        # Note: Legend not added here due to Altair faceting limitations with layered charts
         reference_line = (
             alt.Chart(melted_data)
             .mark_rule(color="black", strokeDash=[5, 5], size=2)
-            .encode(x=alt.datum(5.0))
+            .encode(x=alt.datum(tau))
         )
 
         # Layer first, then apply faceting to the result
@@ -435,7 +437,10 @@ def _(alt, pd):
             alt.layer(base_chart, reference_line)
             .facet(column=alt.Column("method:N", title=None, header=None))
             .properties(
-                title=f"Sampling Distributions of ATE Naive (SE = {data['naive_ate'].std():.3f}) vs CUPED (SE = {data['cuped_ate'].std():.3f})"
+                title=alt.Title(
+                    text=f"Sampling Distributions: Naive (SE = {data['naive_ate'].std():.3f}) vs CUPED (SE = {data['cuped_ate'].std():.3f})",
+                    subtitle="Black dashed line = True Average Treatment Effect"
+                )
             )
             .configure_title(fontSize=16, anchor="middle")
             .configure_axis(
@@ -495,63 +500,55 @@ def _(mo):
     r_slider = mo.ui.slider(100, 2000, value=500, step=100, show_value=True)
     n_slider = mo.ui.slider(500, 20000, value=2000, step=500, show_value=True)
 
-    # Markdown template to replicate old hstack layout using HTML flex
-    template = """
-    ### Data Parameters
-
-    <div style="display: flex; justify-content: space-around;">
-      <div>Mean X: {mean_x}</div>
-      <div>Mean Y: {mean_y}</div>
-    </div>
-
-    <div style="display: flex; justify-content: space-around;">
-      <div>SD X: {sd_x}</div>
-      <div>SD Y: {sd_y}</div>
-    </div>
-
-    Correlation (X,Y): {rho}
-
-    Treatment Effect (τ): {tau}
-
-    ### Simulation Parameters
-
-    <div style="display: flex; justify-content: space-around;">
-      <div>Replications (r): {r}</div>
-      <div>Sample Size (n): {n}</div>
-    </div>
-    """
-
-    # Batch sliders into the template, then wrap in form
-    form = (
-        mo.md(template)
-        .batch(
-            mean_x=mean_x_slider,
-            mean_y=mean_y_slider,
-            sd_x=sd_x_slider,
-            sd_y=sd_y_slider,
-            rho=rho_slider,
-            tau=tau_slider,
-            r=r_slider,
-            n=n_slider,
-        )
-        .form(submit_button_label="Run Simulation", bordered=False)
+    # Native Marimo layout with proper alignment
+    param_batch = mo.ui.batch(
+        mo.vstack([
+            mo.md("### Data Parameters"),
+            mo.hstack([
+                mo.vstack([mo.md("Mean X"), mean_x_slider]),
+                mo.vstack([mo.md("Mean Y"), mean_y_slider]),
+            ], justify="start", gap=2),
+            mo.hstack([
+                mo.vstack([mo.md("SD X"), sd_x_slider]),
+                mo.vstack([mo.md("SD Y"), sd_y_slider]),
+            ], justify="start", gap=2),
+            mo.vstack([mo.md("Correlation (X,Y)"), rho_slider]),
+            mo.vstack([mo.md("Treatment Effect (τ)"), tau_slider]),
+            mo.md("### Simulation Parameters"),
+            mo.vstack([mo.md("Replications (r)"), r_slider]),
+            mo.vstack([mo.md("Sample Size (n)"), n_slider]),
+        ]),
+        {
+            "mean_x": mean_x_slider,
+            "mean_y": mean_y_slider,
+            "sd_x": sd_x_slider,
+            "sd_y": sd_y_slider,
+            "rho": rho_slider,
+            "tau": tau_slider,
+            "r": r_slider,
+            "n": n_slider,
+        }
     )
-    return (form,)
+
+    # State to store the parameters used for computation
+    default_params = {
+        "mean_x": 0, "mean_y": 0, "sd_x": 100, "sd_y": 100,
+        "rho": 0.6, "tau": 5.0, "r": 500, "n": 2000
+    }
+    get_params, set_params = mo.state(default_params)
+
+    # Run button with on_change callback to update state when clicked
+    run_button = mo.ui.run_button(
+        label="Run Simulation",
+        on_change=lambda _: set_params(param_batch.value)
+    )
+    return get_params, param_batch, run_button
 
 
 @app.cell
-def _(form):
-    # Get form values (dict from batch); use defaults if not submitted yet
-    params = form.value or {
-        "mean_x": 0,
-        "mean_y": 0,
-        "sd_x": 100,
-        "sd_y": 100,
-        "rho": 0.6,
-        "tau": 5.0,
-        "r": 500,
-        "n": 2000,
-    }
+def _(get_params):
+    # Get parameters from state (initialized with defaults, updated on button click)
+    params = get_params()
     mean = [params["mean_x"], params["mean_y"]]
     sd = [params["sd_x"], params["sd_y"]]
     n = params["n"]
@@ -613,6 +610,7 @@ def _(np):
                 y=alt.Y("effect:Q", title="Effect Size"),
                 color=alt.Color(
                     "method:N",
+                    title="Method",
                     scale=alt.Scale(
                         domain=["Naive", "CUPED"], range=["lightcoral", "lightgreen"]
                     ),
@@ -624,25 +622,40 @@ def _(np):
             .mark_errorbar()
             .encode(
                 x="method:N",
-                y="ymin:Q",
+                y=alt.Y("ymin:Q", title=""),
                 y2="ymax:Q",
                 color=alt.Color(
                     "method:N",
+                    title="Method",
                     scale=alt.Scale(
                         domain=["Naive", "CUPED"], range=["lightcoral", "lightgreen"]
                     ),
+                    legend=None,
                 ),
             )
         )
+        # Create data for true effect line with legend entry
+        true_effect_data = pd.DataFrame({"label": ["True Average Treatment Effect"], "value": [tau]})
         rule = (
-            alt.Chart()
-            .mark_rule(color="black", strokeDash=[5, 5])
-            .encode(y=alt.datum(tau))
+            alt.Chart(true_effect_data)
+            .mark_rule(strokeDash=[5, 5], size=2)
+            .encode(
+                y="value:Q",
+                color=alt.Color(
+                    "label:N",
+                    scale=alt.Scale(domain=["True Average Treatment Effect"], range=["black"]),
+                    legend=alt.Legend(title=None)
+                )
+            )
         )
-        graph = (points + error_bars + rule).properties(
-            title="Single Experiment Effect Estimates with 95% CI",
-            width=400,
-            height=300,
+        graph = (
+            (points + error_bars + rule)
+            .resolve_scale(color="independent")
+            .properties(
+                title="Single Experiment Effect Estimates with 95% CI",
+                width=400,
+                height=300,
+            )
         )
         graph_display = mo.ui.altair_chart(graph)
 
@@ -683,10 +696,8 @@ def _(
     # Generate replication data for sampling distribution analysis
     out_df = vectorized_replicate_ab_test(r, n, tau, mean, sd, rho)
 
-    # print(f"CUPED std: {out_df['cuped_ate'].std():.3f}")
-
     # Generate comprehensive sampling distribution visualization
-    chart = generate_sampling_distribution_altair(out_df)
+    chart = generate_sampling_distribution_altair(out_df, tau)
     altair_display = mo.ui.altair_chart(chart)
 
     # Calculate variance reduction for display
@@ -717,11 +728,16 @@ def _(
 
 
 @app.cell
-def _(form, mo, results_display):
+def _(mo, param_batch, results_display, run_button):
     # Create complete CUPED tab with parameters and results
-    cuped_tab = mo.vstack(
-        [mo.md("# CUPED Simulator \n"), mo.hstack([form, results_display])]
-    )
+    cuped_tab = mo.vstack([
+        mo.md("# CUPED Simulator"),
+        mo.md("*Explore how CUPED reduces variance in A/B testing by adjusting for pre-experiment covariates. **Tip:** Increase the correlation between covariate and outcome to see greater variance reduction.*"),
+        mo.hstack([
+            mo.vstack([param_batch, run_button]),
+            results_display
+        ], gap=0)
+    ])
     return (cuped_tab,)
 
 
@@ -905,16 +921,6 @@ def _(np, pd, run_ttest, simulate_correlated_data):
 
         return res
     return (replicate_ab_test,)
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    return
 
 
 if __name__ == "__main__":
