@@ -80,5 +80,5 @@ Navigate the tabbed interface to explore CUPED interactively.
 ## Notes
 - Vectorized operations improved simulation speed by ~63%
 
-## To-do list
-- deploy notebook
+## Future Improvements
+- Record a video to show how CUPED scales better than regression approaches
