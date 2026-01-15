@@ -616,10 +616,10 @@ def _(mo):
 
     glossary = mo.accordion({
         "Standard Error (SE)": mo.md("""
-    The standard error measures the precision of an estimate. A smaller SE means the estimate is more precise and reliable. In A/B testing, lower SE means faster experiments.
+    The standard error measures the standard deviation of an estimate. A smaller SE means the estimate is more precise and reliable. In A/B testing, lower SE means faster experiments.
         """),
         "Covariate": mo.md("""
-    A covariate is a variable measured before the experiment that is correlated with the outcome. In CUPED, we use pre-experiment data (like last week's metrics) as a covariate to reduce variance.
+    A covariate is a variable that we have data for, but are not primarily interested in. In CUPED, we use pre-experiment data (like last week's metrics) as a covariate. This data was tracked, but we are primarily interested in the treatment and outcome variable.
         """),
         "CUPED (Controlled-experiment Using Pre-Experiment Data)": mo.md("""
     CUPED is a variance reduction technique developed at Microsoft. It adjusts the outcome variable using pre-experiment covariates to produce more precise treatment effect estimates without increasing sample size.
@@ -660,9 +660,11 @@ def _(controls_panel, glossary, mo, tab1_content, tab2_content, tab3_content):
 
     The pre-experiment value of the outcome metric is usually an excellent covariate for CUPED. For example, if you're measuring revenue per user, using each user's revenue from the week before the experiment started tends to be highly correlated with their revenue during the experiment.
 
+    Reference: Kohavi, Ron & Deng, Alex & Xu, Ya & Walker, Toby. (2013). Improving the Sensitivity of Online Controlled Experiments by Utilizing Pre-Experiment Data. 10.1145/2433396.2433413. 
+
     **Avoiding bias:**
 
-    Be careful not to use covariates that could be affected by the treatment. The covariate must be measured *before* treatment assignment or be otherwise unaffected by it. Using a post-treatment variable as a covariate introduces bias and invalidates the analysis.
+    Be careful not to use covariates that could be affected by the treatment. The covariate must be measured *before* treatment assignment or be otherwise unaffected by it. Using a post-treatment variable as a covariate introduces bias in the causal estimate. 
         """),
     })
 
