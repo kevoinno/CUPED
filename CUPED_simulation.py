@@ -170,14 +170,7 @@ def _(np, pd):
         cuped_ates = vectorized_ate(y_cv, t)
 
         return pd.DataFrame({"naive_ate": naive_ates, "cuped_ate": cuped_ates})
-
-    return (
-        simulate_correlated_data,
-        vectorized_ate,
-        vectorized_cuped,
-        vectorized_replicate_ab_test,
-        vectorized_simulate_correlated_data,
-    )
+    return simulate_correlated_data, vectorized_replicate_ab_test
 
 
 @app.cell
@@ -216,7 +209,6 @@ def _(mo):
         mo.vstack([mo.md("**Sample Size (n)**"), n_slider]),
         mo.vstack([mo.md("**Replications (r)**"), r_slider]),
     ])
-
     return (
         controls_panel,
         mean_x_slider,
@@ -253,7 +245,7 @@ def _(
 
     mean = [mean_x, mean_y]
     sd = [sd_x, sd_y]
-    return mean, mean_x, mean_y, n, r, rho, sd, sd_x, sd_y, tau
+    return mean, n, r, rho, sd, tau
 
 
 @app.cell
@@ -314,13 +306,11 @@ def _(
         (naive_sampling_se**2 - cuped_sampling_se**2) / naive_sampling_se**2
     ) * 100
     return (
-        control,
-        control_cv,
         cuped_ci_high,
         cuped_ci_low,
         cuped_effect,
-        cuped_se,
         cuped_sampling_se,
+        cuped_se,
         cuped_ttest,
         naive_ci_high,
         naive_ci_low,
@@ -330,9 +320,6 @@ def _(
         naive_ttest,
         replicated_results,
         single_exp_data,
-        theta,
-        treated,
-        treated_cv,
         variance_reduction,
     )
 
@@ -369,17 +356,19 @@ def _(
             <div style="color: #64748b; font-size: 0.875rem; margin-bottom: 0.25rem;">Naive Estimate</div>
             <div style="font-size: 1.5rem; font-weight: 600; color: #1e293b;">{naive_effect:.3f}</div>
             <div style="color: #64748b; font-size: 0.75rem;">95% CI: [{naive_ci_low:.3f}, {naive_ci_high:.3f}]</div>
-            <div style="color: #64748b; font-size: 0.75rem;">SE: {naive_se:.3f} | p-value: {naive_pvalue:.4f}</div>
+            <div style="color: #64748b; font-size: 0.75rem;">Std. error: {naive_se:.3f}</div>
+            <div style="color: #64748b; font-size: 0.75rem;">p-value: {naive_pvalue:.4f}</div>
         </div>
         <div style="flex: 1; padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 4px solid #10b981;">
             <div style="color: #64748b; font-size: 0.875rem; margin-bottom: 0.25rem;">CUPED Estimate</div>
             <div style="font-size: 1.5rem; font-weight: 600; color: #1e293b;">{cuped_effect:.3f}</div>
             <div style="color: #64748b; font-size: 0.75rem;">95% CI: [{cuped_ci_low:.3f}, {cuped_ci_high:.3f}]</div>
-            <div style="color: #64748b; font-size: 0.75rem;">SE: {cuped_se:.3f} | p-value: {cuped_pvalue:.4f}</div>
+            <div style="color: #64748b; font-size: 0.75rem;">Std. error: {cuped_se:.3f}</div>
+            <div style="color: #64748b; font-size: 0.75rem;">p-value: {cuped_pvalue:.4f}</div>
         </div>
         <div style="flex: 1; padding: 1rem; background: #fafafa; border-radius: 8px; border-left: 4px solid #1e293b;">
             <div style="color: #64748b; font-size: 0.875rem; margin-bottom: 0.25rem;">True Effect (τ)</div>
-            <div style="font-size: 1.5rem; font-weight: 600; color: #1e293b;">{tau:.3f}</div>
+            <div style="font-size: 1.5rem; font-weight: 600; color: #1e293b;">{tau:.1f}</div>
         </div>
     </div>
     """
@@ -456,21 +445,20 @@ def _(
         tab1_scorecard,
         mo.ui.altair_chart(tab1_chart),
     ])
-    return (
-        error_bars,
-        interval_data,
-        points,
-        scorecard_html,
-        tab1_chart,
-        tab1_content,
-        tab1_scorecard,
-        true_effect_data,
-        true_effect_rule,
-    )
+    return (tab1_content,)
 
 
 @app.cell
-def _(alt, cuped_sampling_se, mo, naive_sampling_se, pd, replicated_results, tau, variance_reduction):
+def _(
+    alt,
+    cuped_sampling_se,
+    mo,
+    naive_sampling_se,
+    pd,
+    replicated_results,
+    tau,
+    variance_reduction,
+):
     # ==========================================================================
     # TAB 2: REPLICATED POWER
     # ==========================================================================
@@ -523,23 +511,36 @@ def _(alt, cuped_sampling_se, mo, naive_sampling_se, pd, replicated_results, tau
 
     # Business impact callout
     business_callout = mo.md(f"""
-**Business Impact:** Experiments reach statistical significance **{time_savings_pct:.1f}% faster** with CUPED.
+    **Why variance reduction matters:** On average, you could have cut down the time your A/B test or experiment takes by **{time_savings_pct:.1f}%** with CUPED. We get faster decision making with the same power and type 1 error rate.
 
-For example, a **{baseline_days}-day experiment** could conclude in just **{reduced_days:.1f} days**.
+    For example, a **{baseline_days}-day experiment** could conclude in just **{reduced_days:.1f} days**.
     """).callout(kind="success")
 
     # Explanation of time savings calculation
-    time_explanation = mo.md(f"""
-**How is time savings calculated?**
+    time_explanation = mo.vstack([
+        mo.md(f"""
+        **How is time savings calculated?**
 
-The required sample size for an experiment scales proportionally with variance (n ∝ σ²). Since experiment duration is directly tied to how quickly you accumulate samples, reducing variance by X% means you need X% fewer samples to achieve the same statistical power.
+        The variance reduction was {time_savings_pct:.1f}%.
+        """),
+        mo.md(
+        r'''
+        The sample size of each group n is proportional to the variance of our outcome metric Y. In math, this is:
 
-- **Naive SE:** {naive_sampling_se:.4f} → Variance: {naive_sampling_se**2:.4f}
-- **CUPED SE:** {cuped_sampling_se:.4f} → Variance: {cuped_sampling_se**2:.4f}
-- **Variance Reduction:** ({naive_sampling_se**2:.4f} - {cuped_sampling_se**2:.4f}) / {naive_sampling_se**2:.4f} = **{time_savings_pct:.1f}%**
+        \[
+        n \propto Var(Y)
+        \]
 
-This means experiments can conclude {time_savings_pct:.1f}% sooner while maintaining the same statistical rigor.
-    """)
+        But after applying CUPED, we are working with the covariate adjusted outcome $Y_{cv}$
+
+        \[
+        n \propto Var(Y_{cv})
+        \]
+        '''),
+        mo.md(f"""
+         Remember, the variance of the covariate adjusted outcome is {time_savings_pct:.1f}% smaller than the original outcome. That means our required sample size will also be  {time_savings_pct:.1f}% smaller. This also means the time we need to wait for the experiment to run is reduced by {time_savings_pct:.1f}% because we need less samples to achieve the same power and type 1 error rate.
+        """)
+    ])
 
     # Tab 2 content
     tab2_content = mo.vstack([
@@ -547,18 +548,7 @@ This means experiments can conclude {time_savings_pct:.1f}% sooner while maintai
         business_callout,
         time_explanation,
     ])
-    return (
-        baseline_days,
-        business_callout,
-        histogram,
-        melted_results,
-        reduced_days,
-        tab2_chart,
-        tab2_content,
-        time_explanation,
-        time_savings_pct,
-        true_effect_line,
-    )
+    return (tab2_content,)
 
 
 @app.cell
@@ -591,22 +581,22 @@ def _(cuped_effect, cuped_se, cuped_ttest, mo, pd, single_exp_data, smf):
 
     # Explanation
     lin_explanation = mo.md("""
-### Lin Estimator (Regression Adjustment)
+    ### Lin Estimator (Regression Adjustment)
 
-The Lin estimator (Lin, 2013) adjusts for covariates using OLS regression with an interaction term:
+    The results from CUPED can also be achieved through regression. The Lin estimator (Lin, 2013) adjusts for covariates using OLS regression with an interaction term:
 
-```
-y ~ treatment + x_centered + treatment * x_centered
-```
+    ```
+    y ~ treatment + x_centered + treatment * x_centered
+    ```
 
-**Key Insight:** CUPED is asymptotically equivalent to the Lin estimator. Both methods:
-- Reduce variance by leveraging pre-experiment covariate information
-- Produce unbiased estimates of the average treatment effect
-- Achieve the same variance reduction in large samples
+    **CUPED is asymptotically equivalent to the Lin estimator.** Both methods:
+    - Reduce variance by leveraging pre-experiment covariate information
+    - Produce unbiased estimates of the average treatment effect
+    - Achieve the same variance reduction in large samples
 
-The coefficient on the `treatment` term in the Lin regression should closely match the CUPED estimate shown above.
+    The coefficient on the `treatment` term in the Lin regression should closely match the CUPED estimate shown above.
 
-**Reference:** Lin, W. (2013). "Agnostic notes on regression adjustments to experimental data: Reexamining Freedman's critique." *The Annals of Applied Statistics*.
+    **Reference:** Lin, W. (2013). "Agnostic notes on regression adjustments to experimental data: Reexamining Freedman's critique." *The Annals of Applied Statistics*.
     """)
 
     # Tab 3 content
@@ -615,17 +605,7 @@ The coefficient on the `treatment` term in the Lin regression should closely mat
         comparison_table,
         lin_explanation,
     ])
-    return (
-        comparison_data,
-        comparison_table,
-        lin_data,
-        lin_estimate,
-        lin_explanation,
-        lin_model,
-        lin_pvalue,
-        lin_se,
-        tab3_content,
-    )
+    return (tab3_content,)
 
 
 @app.cell
@@ -636,19 +616,19 @@ def _(mo):
 
     glossary = mo.accordion({
         "Standard Error (SE)": mo.md("""
-The standard error measures the precision of an estimate. A smaller SE means the estimate is more precise and reliable. In A/B testing, lower SE means faster experiments.
+    The standard error measures the precision of an estimate. A smaller SE means the estimate is more precise and reliable. In A/B testing, lower SE means faster experiments.
         """),
         "Covariate": mo.md("""
-A covariate is a variable measured before the experiment that is correlated with the outcome. In CUPED, we use pre-experiment data (like last week's metrics) as a covariate to reduce variance.
+    A covariate is a variable measured before the experiment that is correlated with the outcome. In CUPED, we use pre-experiment data (like last week's metrics) as a covariate to reduce variance.
         """),
         "CUPED (Controlled-experiment Using Pre-Experiment Data)": mo.md("""
-CUPED is a variance reduction technique developed at Microsoft. It adjusts the outcome variable using pre-experiment covariates to produce more precise treatment effect estimates without increasing sample size.
+    CUPED is a variance reduction technique developed at Microsoft. It adjusts the outcome variable using pre-experiment covariates to produce more precise treatment effect estimates without increasing sample size.
         """),
         "Variance Reduction": mo.md("""
-Variance reduction refers to techniques that make estimates more precise. With CUPED, we can achieve the same statistical power with fewer samples, leading to faster experiments.
+    Variance reduction refers to techniques that make estimates more precise. With CUPED, we can achieve the same statistical power with fewer samples, leading to faster experiments. Visually, reducing variance makes confidence intervals narrower.
         """),
         "Lin Estimator": mo.md("""
-The Lin estimator is a regression-based approach to covariate adjustment proposed by Winston Lin in 2013. It is asymptotically equivalent to CUPED and provides theoretical justification for the method.
+    The Lin estimator is a regression-based approach to covariate adjustment proposed by Winston Lin in 2013. It is asymptotically equivalent to CUPED and provides theoretical justification for the method.
         """),
     })
     return (glossary,)
@@ -662,37 +642,56 @@ def _(controls_panel, glossary, mo, tab1_content, tab2_content, tab3_content):
 
     # Header
     header = mo.md("""
-# CUPED Experimentation Simulator
+    # CUPED Experimentation Simulator
 
-**CUPED** (Controlled-experiment Using Pre-Experiment Data) is a variance reduction technique that makes A/B tests faster and more sensitive. By adjusting for pre-experiment covariates, CUPED can detect the same treatment effects with fewer samples or find smaller effects with the same sample size.
+    **CUPED** (Controlled-experiment Using Pre-Experiment Data) is a variance reduction technique that makes A/B tests faster and more sensitive. By adjusting for pre-experiment covariates, CUPED can detect the same treatment effects with fewer samples or find smaller effects with the same sample size. The more correlated the pre-experiment data is with the outcome metric, the more the variance will be reduced!
     """)
 
-    # Result tabs
+    # Result tabs (without Technical Deep Dive)
     result_tabs = mo.ui.tabs({
         "Single Experiment": tab1_content,
         "Replicated Results": tab2_content,
-        "Technical Deep Dive": tab3_content,
     })
 
-    # Right side content (tabs + glossary)
+    # Practical Considerations accordion
+    practical_considerations = mo.accordion({
+        "Practical Considerations": mo.md("""
+    **Choosing a good covariate:**
+
+    The pre-experiment value of the outcome metric is usually an excellent covariate for CUPED. For example, if you're measuring revenue per user, using each user's revenue from the week before the experiment started tends to be highly correlated with their revenue during the experiment.
+
+    **Avoiding bias:**
+
+    Be careful not to use covariates that could be affected by the treatment. The covariate must be measured *before* treatment assignment or be otherwise unaffected by it. Using a post-treatment variable as a covariate introduces bias and invalidates the analysis.
+        """),
+    })
+
+    # Advanced Info dropdown (contains Technical Deep Dive content)
+    advanced_info = mo.accordion({
+        "Advanced Info": tab3_content,
+    })
+
+    # Right side content (tabs only)
     right_content = mo.vstack([
         result_tabs,
-        mo.md("---"),
-        mo.md("### Glossary"),
-        glossary,
     ])
 
-    # Main layout: controls on left, content on right
+    # Main layout: controls on left, content on right, then practical considerations, advanced info, and glossary full-width
     main_content = mo.vstack([
         header,
         mo.hstack([
             controls_panel,
             right_content,
         ], gap=4, align="start"),
+        mo.md("---"),
+        practical_considerations,
+        advanced_info,
+        mo.md("### Glossary"),
+        glossary,
     ])
 
     main_content
-    return header, main_content, result_tabs, right_content
+    return
 
 
 if __name__ == "__main__":

@@ -22,7 +22,6 @@ The primary interface focuses on building intuition for CUPED's variance reducti
 For users wanting deeper statistical understanding:
 
 - **Multi-method comparison**: Compare variance reduction across:
-  - Multi-linear regression adjustment
   - Winston Lin centered regression
   - CUPED covariate adjustment
 - **Equivalence demonstration**: Show mathematical relationship between methods
@@ -84,9 +83,6 @@ Navigate the tabbed interface to explore CUPED interactively.
 - **Package Management**: uv for modern Python dependency management
 - **Architecture**: Functional programming with pure data transformations
 ## To-do list
-- Fix reactivity (try one shotting a prompt)
--  Polish user experience and educational content 
--  Add business logic below the variance reduction statement. 
-  - e.g. 1 "This could have reduced our experiment time by X%"
-  - e.g. 2 "This could have reduced our sample size by X% while preserving the same power and significance level"
--  Add multi-method comparison functions and visualizations (Extras tab placeholder)
+- Fix up UI 
+  - clearly display SE, pvalues in score cards
+  - touch up the explanations
