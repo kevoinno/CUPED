@@ -2,38 +2,32 @@
 
 An interactive educational tool for understanding Controlled Experiment Using Pre-Experiment Data (CUPED), a statistical technique that reduces variance in A/B testing by leveraging pre-experiment covariates.
 
-**Why it exists:** A/B testing often requires large sample sizes due to high outcome variance. CUPED mathematically reduces this variance, enabling faster experimentation with the same statistical power.
+When running A/B tests at scale, typically companies are looking to detect extremely small effects, meaning that the A/B tests they run require large sample sizes. This makes experiments last longer as we have to wait for users to accumulate. CUPED mathematically reduces this variance, enabling faster experimentation with the same statistical power.
 
-**Target users:** Data scientists, analysts, and researchers wanting to understand and apply CUPED in their experimentation platforms.
+This simulation tool is for product mangaers, data scientists, and students who an introduction to the intuition behind CUPED.
 
 ## Features
 
-### Core CUPED Learning (Main Tab)
-
+### Simulation Tool
 The primary interface focuses on building intuition for CUPED's variance reduction:
 
 - **Interactive parameter exploration**: Adjust sample size, treatment effect, and covariate correlation
-- **CUPED vs naive comparison**: Side-by-side histograms showing variance reduction
-- **Real-time results**: See standard error reduction and confidence interval improvements
+- **CUPED vs Standard A/B Test Comparisons**: Side-by-side histograms showing variance reduction for both single-experiment and replicated experiment results
 - **Educational guidance**: Clear explanations of CUPED mechanics and benefits
+- **Clear business implications**: Clearly shows how CUPED can improve the speed of experiments
 
-### Advanced Method Comparison (Secondary Tab)
-
+### Advanced Information and Connections
 For users wanting deeper statistical understanding:
 
-- **Multi-method comparison**: Compare variance reduction across:
+- **Multi-method comparison**: Show asymptotic equivalence between
   - Winston Lin centered regression
   - CUPED covariate adjustment
-- **Equivalence demonstration**: Show mathematical relationship between methods
-- **Performance insights**: Understand when each method performs best
 
-### Production Planning
+### Practical Considerations
+Explains common pitfalls when implementing CUPED
 
-Scale planning for real-world A/B testing:
-
-- **Time savings calculator**: Estimate experiment duration reduction
-- **Sample size optimization**: Calculate required samples with CUPED
-- **ROI quantification**: Demonstrate engineering time savings
+### Glossary
+Defines basic terms associated with CUPED
 
 ## Setup
 
@@ -56,7 +50,7 @@ Scale planning for real-world A/B testing:
 
 3. **Run the simulator**
    ```bash
-   uv run python CUPED_test.py
+   uv run python CUPED_simulation.py
    ```
 
 ### Development (Optional)
@@ -75,14 +69,16 @@ uv run pytest           # Run tests (when available)
 
 Navigate the tabbed interface to explore CUPED interactively.
 
-## Technical Stack
+## Tech Stack
 
 - **UI Framework**: Marimo for reactive, interactive notebooks
 - **Visualization**: Altair for interactive statistical plots, matplotlib for additional plotting
-- **Computation**: numpy, pandas, scipy for data processing and statistics
+- **Computation**: numpy, pandas, scipy, statsmodels for data processing and statistics
 - **Package Management**: uv for modern Python dependency management
 - **Architecture**: Functional programming with pure data transformations
+
+## Notes
+- Vectorized operations improved simulation speed by ~63%
+
 ## To-do list
-- Fix up UI 
-  - clearly display SE, pvalues in score cards
-  - touch up the explanations
+- deploy notebook
