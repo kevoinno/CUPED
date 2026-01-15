@@ -596,7 +596,7 @@ def _(cuped_effect, cuped_se, cuped_ttest, mo, pd, single_exp_data, smf):
 
     The coefficient on the `treatment` term in the Lin regression should closely match the CUPED estimate shown above.
 
-    **Reference:** Lin, W. (2013). "Agnostic notes on regression adjustments to experimental data: Reexamining Freedman's critique." *The Annals of Applied Statistics*.
+    Reference: Lin, W. (2013). "Agnostic notes on regression adjustments to experimental data: Reexamining Freedman's critique." *The Annals of Applied Statistics*.
     """)
 
     # Tab 3 content
