@@ -352,19 +352,19 @@ def _(
     # Scorecard data
     scorecard_html = f"""
     <div style="display: flex; gap: 2rem; margin-bottom: 1.5rem;">
+         <div style="flex: 1; padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 4px solid #10b981;">
+            <div style="color: #64748b; font-size: 0.875rem; margin-bottom: 0.25rem;">CUPED Estimate</div>
+            <div style="font-size: 1.5rem; font-weight: 600; color: #1e293b;">{cuped_effect:.3f}</div>
+            <div style="color: #64748b; font-size: 0.75rem;">95% CI: [{cuped_ci_low:.3f}, {cuped_ci_high:.3f}]</div>
+            <div style="color: #64748b; font-size: 0.75rem;">Std. error: {cuped_se:.3f}</div>
+            <div style="color: #64748b; font-size: 0.75rem;">p-value: {cuped_pvalue:.4f}</div>
+        </div>
         <div style="flex: 1; padding: 1rem; background: #f1f5f9; border-radius: 8px; border-left: 4px solid #6366f1;">
             <div style="color: #64748b; font-size: 0.875rem; margin-bottom: 0.25rem;">Naive Estimate</div>
             <div style="font-size: 1.5rem; font-weight: 600; color: #1e293b;">{naive_effect:.3f}</div>
             <div style="color: #64748b; font-size: 0.75rem;">95% CI: [{naive_ci_low:.3f}, {naive_ci_high:.3f}]</div>
             <div style="color: #64748b; font-size: 0.75rem;">Std. error: {naive_se:.3f}</div>
             <div style="color: #64748b; font-size: 0.75rem;">p-value: {naive_pvalue:.4f}</div>
-        </div>
-        <div style="flex: 1; padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 4px solid #10b981;">
-            <div style="color: #64748b; font-size: 0.875rem; margin-bottom: 0.25rem;">CUPED Estimate</div>
-            <div style="font-size: 1.5rem; font-weight: 600; color: #1e293b;">{cuped_effect:.3f}</div>
-            <div style="color: #64748b; font-size: 0.75rem;">95% CI: [{cuped_ci_low:.3f}, {cuped_ci_high:.3f}]</div>
-            <div style="color: #64748b; font-size: 0.75rem;">Std. error: {cuped_se:.3f}</div>
-            <div style="color: #64748b; font-size: 0.75rem;">p-value: {cuped_pvalue:.4f}</div>
         </div>
         <div style="flex: 1; padding: 1rem; background: #fafafa; border-radius: 8px; border-left: 4px solid #1e293b;">
             <div style="color: #64748b; font-size: 0.875rem; margin-bottom: 0.25rem;">True Effect (τ)</div>
@@ -440,10 +440,19 @@ def _(
         .configure_title(fontSize=16, anchor="middle")
     )
 
+    # CI % width reduction callout
+    naive_width = naive_ci_high - naive_ci_low
+    cuped_width = cuped_ci_high - cuped_ci_low
+    ci_reduction_pct = ((naive_width - cuped_width) / naive_width) * 100
+    ci_callout = mo.md(
+        f"**CI Width Reduction:** CUPED reduced the 95% confidence interval width by **{ci_reduction_pct:.1f}%** (from {naive_width:.3f} to {cuped_width:.3f})."
+    ).callout(kind="success")
+
     # Tab 1 content
     tab1_content = mo.vstack([
         tab1_scorecard,
         mo.ui.altair_chart(tab1_chart),
+        ci_callout,
     ])
     return (tab1_content,)
 

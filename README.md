@@ -81,4 +81,5 @@ Navigate the tabbed interface to explore CUPED interactively.
 - Vectorized operations improved simulation speed by ~63%
 
 ## Future Improvements
+- add explanation about the first plot. Specifically confidence interval is narrower -> we can say with 95% confidence that the true effect of the treatment on the outcome is in a smaller range than if we ran a regular A/B test
 - Record a video to show how CUPED scales better than regression approaches
