@@ -690,7 +690,7 @@ def _(controls_panel, glossary, mo, tab1_content, tab2_content, tab3_content):
 
     # Controls and results together in one collapsible block
     simulator = mo.accordion({
-        "Experiment Settings": mo.hstack([
+        "How CUPED Tightens Confidence Intervals": mo.hstack([
             controls_panel,
             right_content,
         ], gap=4, align="start"),
