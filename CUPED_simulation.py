@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.25.1"
 app = marimo.App(width="full")
 
 
@@ -12,6 +12,7 @@ def _():
     import altair as alt
     import statsmodels.formula.api as smf
     from scipy.stats import ttest_ind
+
     return alt, mo, np, pd, smf, ttest_ind
 
 
@@ -170,6 +171,7 @@ def _(np, pd):
         cuped_ates = vectorized_ate(y_cv, t)
 
         return pd.DataFrame({"naive_ate": naive_ates, "cuped_ate": cuped_ates})
+
     return simulate_correlated_data, vectorized_replicate_ab_test
 
 
@@ -189,9 +191,8 @@ def _(mo):
     n_slider = mo.ui.slider(500, 20000, value=2000, step=500, show_value=True)
     r_slider = mo.ui.slider(100, 2000, value=500, step=100, show_value=True)
 
-    # Build controls panel layout
+    # Slider column only; the collapsible wrapper lives in the main layout cell
     controls_panel = mo.vstack([
-        mo.md("## Experiment Settings"),
         mo.md("**Covariate (X)**"),
         mo.hstack([
             mo.vstack([mo.md("Mean"), mean_x_slider]),
@@ -205,7 +206,7 @@ def _(mo):
         mo.vstack([mo.md("**Correlation (X, Y)**"), rho_slider]),
         mo.vstack([mo.md("**Treatment Effect (τ)**"), tau_slider]),
         mo.md("---"),
-        mo.md("## Simulation Settings"),
+        mo.md("### Simulation Settings"),
         mo.vstack([mo.md("**Sample Size (n)**"), n_slider]),
         mo.vstack([mo.md("**Replications (r)**"), r_slider]),
     ])
@@ -687,13 +688,18 @@ def _(controls_panel, glossary, mo, tab1_content, tab2_content, tab3_content):
         result_tabs,
     ])
 
-    # Main layout: controls on left, content on right, then practical considerations, advanced info, and glossary full-width
-    main_content = mo.vstack([
-        header,
-        mo.hstack([
+    # Controls and results together in one collapsible block
+    simulator = mo.accordion({
+        "Experiment Settings": mo.hstack([
             controls_panel,
             right_content,
         ], gap=4, align="start"),
+    }, expanded=True)
+
+    # Main layout: collapsible simulator, then practical considerations, advanced info, and glossary full-width
+    main_content = mo.vstack([
+        header,
+        simulator,
         mo.md("---"),
         practical_considerations,
         advanced_info,
