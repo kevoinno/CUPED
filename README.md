@@ -83,3 +83,11 @@ Navigate the tabbed interface to explore CUPED interactively.
 ## Future Improvements
 - add explanation about the first plot. Specifically confidence interval is narrower -> we can say with 95% confidence that the true effect of the treatment on the outcome is in a smaller range than if we ran a regular A/B test
 - Record a video to show how CUPED scales better than regression approaches
+- Replace the CUPED Visualized slider with four click-through steps. A reader can park the slider at 20%, which is mathematically fine (it is just CUPED with a deliberately small theta) but corresponds to nothing anyone would actually do, and it implies CUPED has a tunable strength. The honest states are unadjusted and adjusted. Discrete steps, each with its own explanation:
+    1. the raw data
+    2. taking the residual
+    3. adding mean(Y) back
+    4. the effect on variance, split by control and treatment
+  - `mo.ui.tabs` is already used for the result tabs and would serve as the stepper.
+  - Trap: step 3 is nearly invisible with the current static data. `viz_data` is generated with mean_y = 0, so mean(Y) = 13.4 and the step shifts the cloud only 5% of the 267-unit axis. Regenerate with a non-zero mean_y to make it a real visual event — mean_y = 60 gives mean(Y) = 73.4, a 27% shift.
+  - Tradeoff being accepted: discrete frames lose the motion, and the motion is what made "this is a shear, not a rotation" legible. Either keep a motion cue inside step 2 or state the shear point explicitly in that step's text.
