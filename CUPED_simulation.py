@@ -645,7 +645,200 @@ def _(mo):
 
 
 @app.cell
-def _(controls_panel, glossary, mo, tab1_content, tab2_content, tab3_content):
+def _(np, simulate_correlated_data):
+    # ==========================================================================
+    # CUPED VISUALIZED - static explainer data
+    # ==========================================================================
+
+    # Fixed on purpose. This figure teaches the mechanism, so it must not change
+    # when someone explores the simulator's sliders further down the page -- a
+    # reader who drags rho to 0 while learning what CUPED *is* would be shown a
+    # picture of nothing happening. rho = 0.80 and tau = 28 were chosen so both
+    # effects are legible: the clouds land 0.63 sd apart and the spread falls 35%.
+    np.random.seed(7)
+    viz_data = simulate_correlated_data(240, 28, [0, 0], [40, 40], 0.80)
+    viz_data["group"] = np.where(viz_data["t"] == 1, "Treatment", "Control")
+
+    # Jitter for the strip plot, so overlapping points stay countable
+    viz_data["gx"] = viz_data["t"] + np.random.default_rng(11).uniform(
+        -0.16, 0.16, len(viz_data)
+    )
+
+    # Same estimator the notebook uses for theta in the simulator
+    viz_theta = float(
+        np.cov(viz_data["x"], viz_data["y"], ddof=1)[0, 1]
+        / np.var(viz_data["x"], ddof=1)
+    )
+    viz_xbar = float(viz_data["x"].mean())
+    viz_ybar = float(viz_data["y"].mean())
+
+    # Pin the y-axis over the union of the raw and fully adjusted outcome. Nothing
+    # then leaves the frame mid-drag, and the two charts stay comparable. Let
+    # either chart autoscale instead and the variance reduction -- the entire point
+    # of the figure -- becomes invisible.
+    _y_end = viz_data["y"] - viz_theta * (viz_data["x"] - viz_xbar)
+    _lo = min(viz_data["y"].min(), _y_end.min())
+    _hi = max(viz_data["y"].max(), _y_end.max())
+    _pad = (_hi - _lo) * 0.05
+    viz_y_domain = [float(_lo - _pad), float(_hi + _pad)]
+    return viz_data, viz_theta, viz_xbar, viz_y_domain, viz_ybar
+
+
+@app.cell
+def _(alt, mo, pd, viz_data, viz_theta, viz_xbar, viz_y_domain, viz_ybar):
+    # ==========================================================================
+    # CUPED VISUALIZED - the animation
+    # ==========================================================================
+
+    # The slider is a Vega parameter, not a marimo one. The shear below compiles to
+    # an expression the browser evaluates, so the data ships once and dragging
+    # costs no kernel round-trip at all.
+    viz_progress = alt.param(
+        name="progress",
+        value=0.0,
+        bind=alt.binding_range(min=0, max=1, step=0.02, name="CUPED adjustment  "),
+    )
+
+    # Y_cv = Y - theta * (X - E[X]), interpolated by `progress`: 0 is the raw
+    # outcome, 1 is fully adjusted. Every point keeps its X and only drops -- this
+    # is a vertical shear, not a rotation.
+    _shear = f"datum.y - progress * {viz_theta} * (datum.x - {viz_xbar})"
+
+    _y_scale = alt.Scale(domain=viz_y_domain, nice=False)
+    _gx_scale = alt.Scale(domain=[-0.5, 1.95])
+    _colors = alt.Scale(domain=["Control", "Treatment"], range=["#6366f1", "#10b981"])
+    _gx_axis = alt.Axis(
+        values=[0, 1],
+        labelExpr="datum.value == 0 ? 'Control' : 'Treatment'",
+        title=None,
+        labelFontSize=12,
+        grid=False,
+    )
+
+    # ---- left: what happens to each point ------------------------------------
+
+    _cloud = (
+        alt.Chart(viz_data)
+        .transform_calculate(y_now=_shear)
+        .mark_circle(size=28, opacity=0.45)
+        .encode(
+            x=alt.X(
+                "x:Q",
+                title="Pre-experiment covariate (X)",
+                scale=alt.Scale(zero=False, nice=False),
+            ),
+            y=alt.Y("y_now:Q", scale=_y_scale, title="Outcome"),
+            color=alt.Color("group:N", scale=_colors, legend=None),
+        )
+    )
+
+    # The fit line flattens in step with the cloud: slope theta * (1 - progress),
+    # pivoting through (mean x, mean y). At progress 1 it is horizontal.
+    _fit = (
+        alt.Chart(pd.DataFrame({"x": [viz_data["x"].min(), viz_data["x"].max()]}))
+        .transform_calculate(
+            y_line=f"{viz_ybar} + (1 - progress) * {viz_theta} * (datum.x - {viz_xbar})"
+        )
+        .mark_line(color="#1e293b", strokeWidth=2)
+        .encode(
+            x=alt.X("x:Q", scale=alt.Scale(zero=False, nice=False)),
+            y=alt.Y("y_line:Q", scale=_y_scale),
+        )
+    )
+
+    viz_shear_chart = alt.layer(_fit, _cloud).properties(
+        width=330, height=310, title="Each point slides down onto the line"
+    )
+
+    # ---- right: what that does to the experiment -----------------------------
+
+    _strip = (
+        alt.Chart(viz_data)
+        .transform_calculate(y_now=_shear)
+        .mark_circle(size=24, opacity=0.33)
+        .encode(
+            x=alt.X("gx:Q", scale=_gx_scale, axis=_gx_axis),
+            y=alt.Y("y_now:Q", scale=_y_scale, title="Outcome"),
+            color=alt.Color("group:N", scale=_colors, legend=None),
+        )
+    )
+
+    # Aggregated in the browser from the sheared values, so the brackets contract
+    # live as the slider moves.
+    _agg = (
+        alt.Chart(viz_data)
+        .transform_calculate(y_now=_shear)
+        .transform_aggregate(m="mean(y_now)", s="stdev(y_now)", groupby=["group"])
+        .transform_calculate(
+            lo="datum.m - datum.s",
+            hi="datum.m + datum.s",
+            bx="datum.group === 'Control' ? 0.42 : 1.42",
+            lbl="'sd ' + format(datum.s, '.1f')",
+        )
+    )
+
+    _brackets = _agg.mark_rule(strokeWidth=5, strokeCap="round").encode(
+        x=alt.X("bx:Q", scale=_gx_scale, axis=_gx_axis),
+        y=alt.Y("lo:Q", scale=_y_scale),
+        y2="hi:Q",
+        color=alt.Color("group:N", scale=_colors, legend=None),
+    )
+
+    _sd_labels = _agg.mark_text(align="left", dx=7, fontSize=11, fontWeight="bold").encode(
+        x=alt.X("bx:Q", scale=_gx_scale, axis=_gx_axis),
+        y=alt.Y("hi:Q", scale=_y_scale),
+        text="lbl:N",
+        color=alt.Color("group:N", scale=_colors, legend=None),
+    )
+
+    viz_group_chart = alt.layer(_strip, _brackets, _sd_labels).properties(
+        width=300, height=310, title="So the groups separate more cleanly"
+    )
+
+    # ---- assembled -----------------------------------------------------------
+
+    cuped_viz = mo.vstack([
+        mo.md("## CUPED Visualized"),
+        mo.md(
+            "Some of the noise in an experiment's outcome is predictable from data you "
+            "already had before it started. CUPED subtracts that predictable part and "
+            "keeps the rest. **Drag the slider below the charts** to apply it."
+        ),
+        alt.hconcat(viz_shear_chart, viz_group_chart)
+        .add_params(viz_progress)
+        .configure_title(fontSize=13, anchor="start", color="#1e293b"),
+        mo.md(
+            r"""
+    Each point falls by $\theta\,(X_i - E[X])$ — how far its covariate sits from average.
+    Points at the middle barely move; points at the edges move most. Nothing shifts
+    sideways, so this is a **shear**, not a rotation: a rotation would drag $X$ along
+    with it and would leave the data correlated.
+
+    What lands is the ordinary regression residual, re-centred on $E[Y]$ so it stays in
+    outcome units. Instead of *"how much did this user spend?"* — mostly a fact about
+    whether they are a big spender — each value now answers *"did this user beat or miss
+    what their own history predicted?"* The first question's variation was never about
+    your treatment, so deleting it costs nothing and quiets the background.
+
+    Watch the two standard deviations fall while the distance between the groups holds:
+    less noise, same signal. That is what makes the confidence interval in the simulator
+    below narrower.
+    """
+        ),
+    ])
+    return (cuped_viz,)
+
+
+@app.cell
+def _(
+    controls_panel,
+    cuped_viz,
+    glossary,
+    mo,
+    tab1_content,
+    tab2_content,
+    tab3_content,
+):
     # ==========================================================================
     # MAIN LAYOUT
     # ==========================================================================
@@ -699,6 +892,7 @@ def _(controls_panel, glossary, mo, tab1_content, tab2_content, tab3_content):
     # Main layout: collapsible simulator, then practical considerations, advanced info, and glossary full-width
     main_content = mo.vstack([
         header,
+        cuped_viz,
         simulator,
         mo.md("---"),
         practical_considerations,
