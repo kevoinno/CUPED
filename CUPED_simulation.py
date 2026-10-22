@@ -6,6 +6,7 @@ app = marimo.App(width="full")
 
 @app.cell
 def _():
+    import time
     import marimo as mo
     import numpy as np
     import pandas as pd
@@ -13,7 +14,7 @@ def _():
     import statsmodels.formula.api as smf
     from scipy.stats import ttest_ind
 
-    return alt, mo, np, pd, smf, ttest_ind
+    return alt, mo, np, pd, smf, time, ttest_ind
 
 
 @app.cell
@@ -647,26 +648,22 @@ def _(mo):
 @app.cell
 def _(np, pd, simulate_correlated_data):
     # ==========================================================================
-    # CUPED VISUALIZED - static explainer data
+    # CUPED VISUALIZED - three-step transformation frames
     # ==========================================================================
 
-    # Fixed on purpose. This figure teaches the mechanism, so it must not change
+    # Fixed data on purpose: this figure teaches the mechanism and must not move
     # when someone explores the simulator's sliders further down the page.
     #
-    # mean_y = 60 is load-bearing. Step 3 ("add mean(Y) back") is a pure
-    # translation by E[Y], so with the outcome centred on zero it would shift the
-    # cloud ~5% of the axis and read as a no-op. At 60 it is a ~27% shift, which is
-    # what makes splitting steps 2 and 3 worth doing at all.
+    # mean_x = 80 is load-bearing. Step 1 -> step 2 is a lift of exactly
+    # theta * mean(X), so with the covariate centred on zero that step would be a
+    # no-op. At 80 the lift is about 1.7x the cloud's own spread -- clearly visible.
+    #
+    # tau = 0 because this figure never shows the treatment split. A non-zero
+    # effect would band the cloud in two with nothing on screen to explain it.
     np.random.seed(7)
-    viz_data = simulate_correlated_data(240, 28, [0, 60], [40, 40], 0.80)
-    viz_data["group"] = np.where(viz_data["t"] == 1, "Treatment", "Control")
+    viz_data = simulate_correlated_data(150, 0, [80, 60], [40, 40], 0.80)
 
-    # Jitter for the step 4 strip plot, so overlapping points stay countable
-    viz_data["gx"] = viz_data["t"] + np.random.default_rng(11).uniform(
-        -0.15, 0.15, len(viz_data)
-    )
-
-    # Same estimator the notebook uses for theta in the simulator
+    # Same estimator the simulator uses for theta
     viz_theta = float(
         np.cov(viz_data["x"], viz_data["y"], ddof=1)[0, 1]
         / np.var(viz_data["x"], ddof=1)
@@ -674,38 +671,61 @@ def _(np, pd, simulate_correlated_data):
     viz_xbar = float(viz_data["x"].mean())
     viz_ybar = float(viz_data["y"].mean())
 
-    # The two intermediate states the steps walk through. Note resid and y_cv
-    # differ only by the constant viz_ybar -- that *is* step 3.
-    viz_data["resid"] = (
-        viz_data["y"] - viz_ybar - viz_theta * (viz_data["x"] - viz_xbar)
+    # The three states, stacked long-form; the chart filters on `step`.
+    # Step 2 differs from step 1 by the constant theta * mean(X), so it moves the
+    # cloud without touching its spread -- that is the point of the last frame.
+    viz_stage_labels = ["Raw outcome (Y)", "Y − θX", "Y − θX + θX̄"]
+    viz_frames = pd.concat(
+        [
+            pd.DataFrame({
+                "x": viz_data["x"].values,
+                "value": _vals.values,
+                "step": _k,
+                "stage": viz_stage_labels[_k],
+            })
+            for _k, _vals in enumerate([
+                viz_data["y"],
+                viz_data["y"] - viz_theta * viz_data["x"],
+                viz_data["y"] - viz_theta * viz_data["x"] + viz_theta * viz_xbar,
+            ])
+        ],
+        ignore_index=True,
     )
-    viz_data["y_cv"] = viz_data["resid"] + viz_ybar
 
-    # One y-axis for every step, spanning all three states. Without it each step
-    # autoscales: the drop in step 2 and the lift in step 3 both vanish, and the
-    # variance reduction in step 4 becomes invisible.
-    _lo = min(viz_data[c].min() for c in ("y", "resid", "y_cv"))
-    _hi = max(viz_data[c].max() for c in ("y", "resid", "y_cv"))
+    # Pinned across all three frames. Let any one of them autoscale and both the
+    # flatten and the lift normalise away, which is the entire figure.
+    _lo, _hi = viz_frames["value"].min(), viz_frames["value"].max()
     _pad = (_hi - _lo) * 0.06
     viz_y_domain = [float(_lo - _pad), float(_hi + _pad)]
 
-    # Per-group spread before and after, for the step 4 brackets
-    _spread_rows = []
-    for _t_val, _label in [(0, "Control"), (1, "Treatment")]:
-        _sub = viz_data[viz_data["t"] == _t_val]
-        for _col, _variant, _offset in [("y", "before", 0.30), ("y_cv", "after", 0.54)]:
-            _m, _s = _sub[_col].mean(), _sub[_col].std(ddof=1)
-            _spread_rows.append({
-                "group": _label,
-                "variant": _variant,
-                "bx": _t_val + _offset,
-                "lo": _m - _s,
-                "hi": _m + _s,
-                "sd": _s,
-                "lbl": f"{_s:.1f}",
-            })
-    viz_spread = pd.DataFrame(_spread_rows)
-    return viz_data, viz_spread, viz_theta, viz_xbar, viz_y_domain, viz_ybar
+    _xlo, _xhi = viz_data["x"].min(), viz_data["x"].max()
+    _xpad = (_xhi - _xlo) * 0.05
+    viz_x_domain = [float(_xlo - _xpad), float(_xhi + _xpad)]
+    return (
+        viz_frames,
+        viz_stage_labels,
+        viz_theta,
+        viz_x_domain,
+        viz_xbar,
+        viz_y_domain,
+        viz_ybar,
+    )
+
+
+@app.cell
+def _(mo):
+    # ==========================================================================
+    # CUPED VISUALIZED - animation ticker
+    # ==========================================================================
+
+    # In its own cell on purpose: a UI element recreated inside the cell it drives
+    # would reset on every tick.
+    #
+    # The interval is deliberately SHORTER than the 1.5s frame period in the next
+    # cell. If they matched, clock jitter could advance the frame index by two and
+    # silently skip a step -- the one failure this figure cannot tolerate.
+    viz_ticker = mo.ui.refresh(default_interval="1s", label="")
+    return (viz_ticker,)
 
 
 @app.cell
@@ -713,217 +733,121 @@ def _(
     alt,
     mo,
     pd,
-    viz_data,
-    viz_spread,
+    time,
+    viz_frames,
+    viz_stage_labels,
     viz_theta,
+    viz_ticker,
+    viz_x_domain,
     viz_xbar,
     viz_y_domain,
     viz_ybar,
 ):
     # ==========================================================================
-    # CUPED VISUALIZED - four click-through steps
+    # CUPED VISUALIZED - the looping animation
     # ==========================================================================
 
-    # Discrete states rather than a scrubber: a partially-applied shear is valid
-    # arithmetic but corresponds to nothing anyone would do, and implies CUPED has
-    # a tunable strength it does not have. Each step ghosts the previous one in
-    # grey, so the motion between them stays visible without being animated.
+    viz_ticker  # dependency: this cell re-runs on every tick of the refresh element
 
+    # Frame period (2s) is twice the ticker interval (1s), so every frame is caught
+    # at least once and the index cannot jump by two. Simulated over 200k ticks:
+    # at a 1.5s period a skip shows up roughly once in 100k, at 2s never.
+    viz_step = int(time.monotonic() / 2.0) % 3
+
+    _frame = viz_frames[viz_frames["step"] == viz_step]
     _y_scale = alt.Scale(domain=viz_y_domain, nice=False)
-    _x_scale = alt.Scale(zero=False, nice=False)
-    _colors = alt.Scale(domain=["Control", "Treatment"], range=["#6366f1", "#10b981"])
-    _ends = pd.DataFrame({"x": [viz_data["x"].min(), viz_data["x"].max()]})
-    _W, _H = 560, 350
+    _x_scale = alt.Scale(domain=viz_x_domain, nice=False)
+    _stage_colors = alt.Scale(
+        domain=viz_stage_labels, range=["#6366f1", "#f59e0b", "#10b981"]
+    )
 
-
-    def _dots(col, ghost=False):
-        base = alt.Chart(viz_data)
-        if ghost:
-            return base.mark_circle(size=24, opacity=0.16, color="#94a3b8").encode(
-                x=alt.X("x:Q", title="Pre-experiment covariate (X)", scale=_x_scale),
-                y=alt.Y(f"{col}:Q", scale=_y_scale, title="Outcome"),
-            )
-        return base.mark_circle(size=27, opacity=0.5).encode(
+    _points = (
+        alt.Chart(_frame)
+        .mark_circle(size=60, opacity=0.6)
+        .encode(
             x=alt.X("x:Q", title="Pre-experiment covariate (X)", scale=_x_scale),
-            y=alt.Y(f"{col}:Q", scale=_y_scale, title="Outcome"),
-            color=alt.Color("group:N", scale=_colors, legend=None),
-        )
-
-
-    def _rule(expr, dashed=False, faint=False):
-        mark = dict(color="#1e293b", strokeWidth=2)
-        if dashed:
-            mark["strokeDash"] = [5, 5]
-        if faint:
-            mark["opacity"] = 0.3
-        return (
-            alt.Chart(_ends)
-            .transform_calculate(yl=expr)
-            .mark_line(**mark)
-            .encode(x=alt.X("x:Q", scale=_x_scale), y=alt.Y("yl:Q", scale=_y_scale))
-        )
-
-
-    _fit_expr = f"{viz_ybar} + {viz_theta} * (datum.x - {viz_xbar})"
-
-    # ---- step 1: the raw data ------------------------------------------------
-    viz_step1 = alt.layer(_rule(_fit_expr), _dots("y")).properties(
-        width=_W, height=_H, title="Raw outcome against the covariate"
-    )
-
-    # ---- step 2: take the residual -------------------------------------------
-    # ghosts the raw cloud and its fit line, so the drop is visible
-    viz_step2 = alt.layer(
-        _dots("y", ghost=True),
-        _rule(_fit_expr, dashed=True, faint=True),
-        _rule("0"),
-        _dots("resid"),
-    ).properties(width=_W, height=_H, title="Residual: raw minus what the line predicts")
-
-    # ---- step 3: add mean(Y) back --------------------------------------------
-    viz_step3 = alt.layer(
-        _dots("resid", ghost=True),
-        _rule("0", dashed=True, faint=True),
-        _rule(str(viz_ybar)),
-        _dots("y_cv"),
-    ).properties(width=_W, height=_H, title="Shifted back into outcome units")
-
-    # ---- step 4: what it buys you --------------------------------------------
-    _gx_scale = alt.Scale(domain=[-0.4, 2.0])
-    _gx_axis = alt.Axis(
-        values=[0, 1],
-        labelExpr="datum.value == 0 ? 'Control' : 'Treatment'",
-        title=None,
-        labelFontSize=12,
-        grid=False,
-    )
-
-    _step4_dots = (
-        alt.Chart(viz_data)
-        .mark_circle(size=22, opacity=0.3)
-        .encode(
-            x=alt.X("gx:Q", scale=_gx_scale, axis=_gx_axis),
-            y=alt.Y("y_cv:Q", scale=_y_scale, title="Outcome"),
-            color=alt.Color("group:N", scale=_colors, legend=None),
-        )
-    )
-    _before = (
-        alt.Chart(viz_spread[viz_spread["variant"] == "before"])
-        .mark_rule(stroke="#cbd5e1", strokeWidth=9, strokeCap="round")
-        .encode(
-            x=alt.X("bx:Q", scale=_gx_scale, axis=_gx_axis),
-            y=alt.Y("lo:Q", scale=_y_scale),
-            y2="hi:Q",
-        )
-    )
-    _after = (
-        alt.Chart(viz_spread[viz_spread["variant"] == "after"])
-        .mark_rule(strokeWidth=9, strokeCap="round")
-        .encode(
-            x=alt.X("bx:Q", scale=_gx_scale, axis=_gx_axis),
-            y=alt.Y("lo:Q", scale=_y_scale),
-            y2="hi:Q",
-            color=alt.Color("group:N", scale=_colors, legend=None),
-        )
-    )
-    _sd_text = (
-        alt.Chart(viz_spread)
-        .mark_text(dy=-11, fontSize=11, fontWeight="bold", color="#475569")
-        .encode(
-            x=alt.X("bx:Q", scale=_gx_scale, axis=_gx_axis),
-            y=alt.Y("hi:Q", scale=_y_scale),
-            text="lbl:N",
+            y=alt.Y("value:Q", title="Outcome (Y)", scale=_y_scale),
+            color=alt.Color("stage:N", scale=_stage_colors, legend=None),
+            tooltip=[
+                alt.Tooltip("x:Q", title="Covariate", format=".1f"),
+                alt.Tooltip("value:Q", title="Value", format=".1f"),
+                alt.Tooltip("stage:N", title="Stage"),
+            ],
         )
     )
 
-    viz_step4 = alt.layer(_step4_dots, _before, _after, _sd_text).properties(
-        width=_W, height=_H, title="±1 sd before (grey) and after (colour), by group"
+    # Mean of Y, dashed. Step 0 straddles it tilted, step 1 sits well below it,
+    # step 2 lands flat on it -- which is what "restored to scale" means.
+    _mean_rule = (
+        alt.Chart(pd.DataFrame({"y": [viz_ybar]}))
+        .mark_rule(color="#1e293b", strokeDash=[6, 4], strokeWidth=2)
+        .encode(y=alt.Y("y:Q", scale=_y_scale))
     )
 
-    # ---- assembled -----------------------------------------------------------
-
-    _sd_before = viz_data["y"].std(ddof=1)
-    _sd_after = viz_data["y_cv"].std(ddof=1)
-    _gap_before = (
-        viz_data.loc[viz_data.t == 1, "y"].mean() - viz_data.loc[viz_data.t == 0, "y"].mean()
+    # Slope theta on the raw frame, flat on the other two. Makes "the cloud
+    # flattens" something you watch rather than something you infer.
+    _slope = viz_theta if viz_step == 0 else 0.0
+    _intercept = float(_frame["value"].mean()) - _slope * viz_xbar
+    _fit = (
+        alt.Chart(pd.DataFrame({"x": viz_x_domain}))
+        .transform_calculate(yl=f"{_intercept} + {_slope} * datum.x")
+        .mark_line(color="#1e293b", strokeWidth=2, opacity=0.8)
+        .encode(x=alt.X("x:Q", scale=_x_scale), y=alt.Y("yl:Q", scale=_y_scale))
     )
-    _gap_after = (
-        viz_data.loc[viz_data.t == 1, "y_cv"].mean()
-        - viz_data.loc[viz_data.t == 0, "y_cv"].mean()
+
+    viz_chart = alt.layer(_mean_rule, _fit, _points).properties(
+        width=620,
+        height=360,
+        title=f"Step {viz_step} of 2  ·  {viz_stage_labels[viz_step]}",
     )
 
-    viz_steps = mo.ui.tabs({
-        "Step 1 · The raw data": mo.vstack([
-            viz_step1,
-            mo.md(
-                f"""
-    Each dot is one unit. The outcome climbs with the covariate, and the line is the best
-    fit through them — slope $\\theta = Cov(X,Y)/Var(X) = {viz_theta:.2f}$.
+    # ---- commentary ----------------------------------------------------------
+    # Deliberately static: all three steps are described at once rather than
+    # swapping with the frame. Text that changes underneath a changing picture is
+    # hard to read, and a reader who missed a frame would have to wait a full cycle.
+    #
+    # Inline maths uses literal theta / X-bar characters rather than LaTeX, to match
+    # the chart's own stage labels and keep the sentences readable in the source.
+    # The one display formula below is LaTeX, which marimo renders with KaTeX.
 
-    That tilt is variation you could have predicted **before the experiment started**. It
-    is not about your treatment; it is about who these users already were. Right now it is
-    sitting in your outcome as noise.
-    """
-            ),
-        ]),
-        "Step 2 · Take the residual": mo.vstack([
-            viz_step2,
-            mo.md(
-                """
-    Subtract what the line predicts from every point. The grey cloud is where they came
-    from; the dashed line is the fit they were measured against.
-
-    Each dot falls by $\\theta\\,(X_i - E[X])$ — its distance from the average covariate.
-    Far from average, big drop. Near the middle, barely moves. **Nothing slides sideways**,
-    which is what makes this a *shear* and not a rotation: a rotation would drag $X$ along
-    too, and would leave the data still correlated.
-
-    What is left is the residual — how far each unit beat or missed its own prediction.
-    Centred on zero, and no longer tilted.
-    """
-            ),
-        ]),
-        "Step 3 · Add mean(Y) back": mo.vstack([
-            viz_step3,
-            mo.md(
-                f"""
-    Residuals centre on zero, which throws away the units — "−12" is not an outcome anyone
-    can act on. Add $E[Y] = {viz_ybar:.1f}$ back and every point lifts by the same amount.
-
-    The shape does not change and the spread is **identical** — this step moves the cloud,
-    not its width. But the values read as outcomes again, so the treatment effect in the
-    next step comes out in the original units.
-
-    This is the CUPED-adjusted outcome: $\\hat{{Y}}_{{cv}} = Y_i - \\theta\\,(X_i - E[X])$.
-    """
-            ),
-        ]),
-        "Step 4 · What it buys you": mo.vstack([
-            viz_step4,
-            mo.md(
-                f"""
-    The same adjusted values, split by group. Grey brackets are ±1 sd **before**
-    adjustment, coloured brackets **after**.
-
-    Spread falls from **{_sd_before:.1f}** to **{_sd_after:.1f}** — a
-    {(1 - _sd_after / _sd_before) * 100:.0f}% reduction — while the distance between the
-    groups holds at **{_gap_before:+.1f}** → **{_gap_after:+.1f}**.
-
-    Less noise, same signal. You deleted variation that was never about the treatment, and
-    that is what narrows the confidence interval in the simulator below.
-    """
-            ),
-        ]),
-    })
+    _sd_raw = float(viz_frames.loc[viz_frames.step == 0, "value"].std(ddof=1))
+    _sd_flat = float(viz_frames.loc[viz_frames.step == 1, "value"].std(ddof=1))
+    _lift = viz_theta * viz_xbar
 
     cuped_viz = mo.vstack([
         mo.md("## CUPED Visualized"),
         mo.md(
             "Some of the noise in an experiment's outcome is predictable from data you "
-            "already had before it started. CUPED subtracts that predictable part and "
-            "keeps the rest. **Click through the four steps** to see how."
+            "already had before it started. CUPED removes that predictable part and keeps "
+            "the rest. The three frames below cycle on their own."
         ),
-        viz_steps,
+        viz_ticker,
+        viz_chart,
+        mo.md(
+            f"""
+    **Step 0 · Raw outcome (Y).** The outcome climbs with the covariate — the solid line
+    is the best fit, slope θ = {viz_theta:.2f}, and the dashed line is the average
+    outcome. That tilt is variation you could have predicted *before the experiment
+    started*: it is about who these users already were, not about any treatment. Spread:
+    **{_sd_raw:.1f}**.
+
+    **Step 1 · Y − θX.** Subtract θX from every point and the slope disappears — the
+    cloud goes flat and its spread falls to **{_sd_flat:.1f}**. That drop is the variance
+    reduction, and it is the whole reason to do this. But everything has also fallen by
+    θX̄ = {_lift:.1f}, far below the dashed average, so the numbers no longer read as
+    outcomes.
+
+    **Step 2 · Y − θX + θX̄.** Add θX̄ back. Every point lifts by the same constant, so
+    the spread is untouched — still **{_sd_flat:.1f}** — while the cloud settles flat on
+    the average outcome. Same scale as step 0, far less scatter.
+
+    \\[
+    \\hat{{Y}}_{{cv}} = Y_i - \\theta X_i + \\theta\\,E[X]
+    \\]
+
+    The slope removal bought the precision; the mean addition bought back the units.
+    """
+        ),
     ])
     return (cuped_viz,)
 
