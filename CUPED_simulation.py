@@ -754,52 +754,66 @@ def _(
     # at a 1.5s period a skip shows up roughly once in 100k, at 2s never.
     viz_step = int(time.monotonic() / 2.0) % 3
 
-    _frame = viz_frames[viz_frames["step"] == viz_step]
-    _y_scale = alt.Scale(domain=viz_y_domain, nice=False)
-    _x_scale = alt.Scale(domain=viz_x_domain, nice=False)
-    _stage_colors = alt.Scale(
-        domain=viz_stage_labels, range=["#6366f1", "#f59e0b", "#10b981"]
-    )
 
-    _points = (
-        alt.Chart(_frame)
-        .mark_circle(size=60, opacity=0.6)
-        .encode(
-            x=alt.X("x:Q", title="Pre-experiment covariate (X)", scale=_x_scale),
-            y=alt.Y("value:Q", title="Outcome (Y)", scale=_y_scale),
-            color=alt.Color("stage:N", scale=_stage_colors, legend=None),
-            tooltip=[
-                alt.Tooltip("x:Q", title="Covariate", format=".1f"),
-                alt.Tooltip("value:Q", title="Value", format=".1f"),
-                alt.Tooltip("stage:N", title="Stage"),
-            ],
+    def viz_build_chart(step):
+        """Build the chart for one transformation step.
+
+        A function rather than inline code so that `scripts/export_steps.py` can
+        pull it out through marimo's `app.run()` and render the same three frames
+        to disk. The exported PNGs then cannot drift from what the notebook shows.
+        """
+        frame = viz_frames[viz_frames["step"] == step]
+        y_scale = alt.Scale(domain=viz_y_domain, nice=False)
+        x_scale = alt.Scale(domain=viz_x_domain, nice=False)
+
+        points = (
+            alt.Chart(frame)
+            .mark_circle(size=60, opacity=0.6)
+            .encode(
+                x=alt.X("x:Q", title="Pre-experiment covariate (X)", scale=x_scale),
+                y=alt.Y("value:Q", title="Outcome (Y)", scale=y_scale),
+                color=alt.Color(
+                    "stage:N",
+                    scale=alt.Scale(
+                        domain=viz_stage_labels, range=["#6366f1", "#f59e0b", "#10b981"]
+                    ),
+                    legend=None,
+                ),
+                tooltip=[
+                    alt.Tooltip("x:Q", title="Covariate", format=".1f"),
+                    alt.Tooltip("value:Q", title="Value", format=".1f"),
+                    alt.Tooltip("stage:N", title="Stage"),
+                ],
+            )
         )
-    )
 
-    # Mean of Y, dashed. Step 0 straddles it tilted, step 1 sits well below it,
-    # step 2 lands flat on it -- which is what "restored to scale" means.
-    _mean_rule = (
-        alt.Chart(pd.DataFrame({"y": [viz_ybar]}))
-        .mark_rule(color="#1e293b", strokeDash=[6, 4], strokeWidth=2)
-        .encode(y=alt.Y("y:Q", scale=_y_scale))
-    )
+        # Mean of Y, dashed. Step 0 straddles it tilted, step 1 sits well below it,
+        # step 2 lands flat on it -- which is what "restored to scale" means.
+        mean_rule = (
+            alt.Chart(pd.DataFrame({"y": [viz_ybar]}))
+            .mark_rule(color="#1e293b", strokeDash=[6, 4], strokeWidth=2)
+            .encode(y=alt.Y("y:Q", scale=y_scale))
+        )
 
-    # Slope theta on the raw frame, flat on the other two. Makes "the cloud
-    # flattens" something you watch rather than something you infer.
-    _slope = viz_theta if viz_step == 0 else 0.0
-    _intercept = float(_frame["value"].mean()) - _slope * viz_xbar
-    _fit = (
-        alt.Chart(pd.DataFrame({"x": viz_x_domain}))
-        .transform_calculate(yl=f"{_intercept} + {_slope} * datum.x")
-        .mark_line(color="#1e293b", strokeWidth=2, opacity=0.8)
-        .encode(x=alt.X("x:Q", scale=_x_scale), y=alt.Y("yl:Q", scale=_y_scale))
-    )
+        # Slope theta on the raw frame, flat on the other two. Makes "the cloud
+        # flattens" something you watch rather than something you infer.
+        slope = viz_theta if step == 0 else 0.0
+        intercept = float(frame["value"].mean()) - slope * viz_xbar
+        fit = (
+            alt.Chart(pd.DataFrame({"x": viz_x_domain}))
+            .transform_calculate(yl=f"{intercept} + {slope} * datum.x")
+            .mark_line(color="#1e293b", strokeWidth=2, opacity=0.8)
+            .encode(x=alt.X("x:Q", scale=x_scale), y=alt.Y("yl:Q", scale=y_scale))
+        )
 
-    viz_chart = alt.layer(_mean_rule, _fit, _points).properties(
-        width=620,
-        height=360,
-        title=f"Step {viz_step} of 2  ·  {viz_stage_labels[viz_step]}",
-    )
+        return alt.layer(mean_rule, fit, points).properties(
+            width=620,
+            height=360,
+            title=f"Step {step} of 2  ·  {viz_stage_labels[step]}",
+        )
+
+
+    viz_chart = viz_build_chart(viz_step)
 
     # ---- commentary ----------------------------------------------------------
     # Deliberately static: all three steps are described at once rather than
